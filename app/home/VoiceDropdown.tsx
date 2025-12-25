@@ -106,7 +106,7 @@ export default function VoiceDropdown({
             return next;
           });
         }}
-        className="px-4 py-2 border-2 border-gray-300 rounded-md bg-white text-sm h-10 inline-flex items-center justify-between w-[520px] text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        className="px-4 py-2 border-2 border-gray-300 rounded-md bg-white text-sm h-10 inline-flex items-center justify-between w-[520px] text-gray-900 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:border-blue-600"
       >
         <span className="truncate">{selected.label}</span>
         <svg

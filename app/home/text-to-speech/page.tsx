@@ -152,7 +152,7 @@ export default function TextToSpeechPage() {
             <label htmlFor="speed-select" className="text-sm font-medium text-gray-900">Speed:</label>
             <select
               id="speed-select"
-              className="px-4 py-2 border-2 border-gray-300 rounded-md text-sm h-10 w-36 bg-white text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+              className="px-4 py-2 border-2 border-gray-300 rounded-md text-sm h-10 w-36 bg-white text-gray-900 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:border-blue-600"
               aria-label="Speed selector"
               defaultValue="1"
             >
