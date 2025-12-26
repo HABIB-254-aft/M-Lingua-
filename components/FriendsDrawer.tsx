@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import ChatWindow from "./ChatWindow";
 
 interface FriendsDrawerProps {
   isOpen: boolean;
@@ -19,9 +20,11 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [selectedFriend, setSelectedFriend] = useState<any | null>(null);
+  const [chatFriend, setChatFriend] = useState<any | null>(null);
   const [friendFilter, setFriendFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [friendSort, setFriendSort] = useState<'name' | 'recent' | 'status'>('name');
   const [searchFilter, setSearchFilter] = useState<'all' | 'name' | 'username' | 'email'>('all');
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   // Voice navigation refs
   const voiceRecognitionRef = useRef<any | null>(null);
@@ -354,75 +357,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     speakMessage("Command not recognized. Say 'help' to hear all available commands.");
   }, [friends, friendRequests, sentRequests, selectedFriend, onClose, stopVoiceRecognition, speakMessage]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      stopVoiceRecognition();
-      spokenRef.current = false;
-      return;
-    }
-
-    // Load current user
-    try {
-      const authData = localStorage.getItem("mlingua_auth");
-      if (authData) {
-        setCurrentUser(JSON.parse(authData));
-      } else {
-        onClose();
-        router.push("/login");
-        return;
-      }
-    } catch {
-      onClose();
-      router.push("/login");
-      return;
-    }
-
-    // Load friends data
-    loadFriendsData();
-
-    // Announce drawer opening and start voice recognition if blind mode is enabled
-    try {
-      const mode = localStorage.getItem("accessibilityMode");
-      if (mode === "blind" && !spokenRef.current) {
-        spokenRef.current = true;
-        const friendsCount = friends.length;
-        const requestsCount = friendRequests.length;
-        const sentCount = sentRequests.length;
-        const message = `Friends page. You have ${friendsCount} friend${friendsCount !== 1 ? "s" : ""}, ${requestsCount} incoming request${requestsCount !== 1 ? "s" : ""}, and ${sentCount} sent request${sentCount !== 1 ? "s" : ""}. Say 'help' to hear all available commands, or 'close' to close.`;
-        speakMessage(message);
-      }
-    } catch {
-      // ignore
-    }
-
-    return () => {
-      clearTypingTimer();
-      stopVoiceRecognition();
-      if (typeof window !== "undefined") {
-        try {
-          window.speechSynthesis.cancel();
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, [isOpen, onClose, router, speakMessage, stopVoiceRecognition, clearTypingTimer, friends.length, friendRequests.length, sentRequests.length]);
-
-  // Announce when profile opens
-  useEffect(() => {
-    if (selectedFriend && isOpen) {
-      try {
-        const mode = localStorage.getItem("accessibilityMode");
-        if (mode === "blind") {
-          const profileMessage = `Profile for ${selectedFriend.name || selectedFriend.displayName || "Friend"}. ${selectedFriend.email ? `Email: ${selectedFriend.email}. ` : ""}${selectedFriend.birthday ? `Birthday: ${new Date(selectedFriend.birthday).toLocaleDateString()}. ` : ""}${selectedFriend.gender ? `Gender: ${selectedFriend.gender}. ` : ""}Say 'close' to close the profile, or 'remove' to unfriend.`;
-          speakMessage(profileMessage);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, [selectedFriend, isOpen, speakMessage]);
-
+  // Define initializeMockFriends first (used by loadFriendsData)
   const initializeMockFriends = () => {
     try {
       // Get existing friends first
@@ -538,7 +473,21 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     }
   };
 
-  const loadFriendsData = () => {
+  // Define loadUnreadCounts and loadFriendsData before useEffect that uses them
+  const loadUnreadCounts = useCallback(() => {
+    if (!currentUser?.id) return;
+    try {
+      const unreadKey = `mlingua_unread_${currentUser.id}`;
+      const unreadData = localStorage.getItem(unreadKey);
+      if (unreadData) {
+        setUnreadCounts(JSON.parse(unreadData));
+      }
+    } catch {
+      // ignore
+    }
+  }, [currentUser?.id]);
+
+  const loadFriendsData = useCallback(() => {
     try {
       // Initialize mock friends on first load
       initializeMockFriends();
@@ -549,17 +498,105 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       setFriends(loadedFriends);
       console.log("📋 Loaded friends:", loadedFriends.length, loadedFriends);
 
-      // Load friend requests
-      const requestsData = localStorage.getItem("mlingua_friend_requests");
-      setFriendRequests(requestsData ? JSON.parse(requestsData) : []);
+      // Load friend requests (using user-specific key)
+      if (currentUser?.id) {
+        const requestsData = localStorage.getItem(`mlingua_friend_requests_${currentUser.id}`);
+        setFriendRequests(requestsData ? JSON.parse(requestsData) : []);
 
-      // Load sent requests
-      const sentData = localStorage.getItem("mlingua_sent_requests");
-      setSentRequests(sentData ? JSON.parse(sentData) : []);
+        // Load sent requests
+        const sentData = localStorage.getItem(`mlingua_sent_requests_${currentUser.id}`);
+        setSentRequests(sentData ? JSON.parse(sentData) : []);
+      } else {
+        // Fallback to old format for backward compatibility
+        const requestsData = localStorage.getItem("mlingua_friend_requests");
+        setFriendRequests(requestsData ? JSON.parse(requestsData) : []);
+        const sentData = localStorage.getItem("mlingua_sent_requests");
+        setSentRequests(sentData ? JSON.parse(sentData) : []);
+      }
+
+      // Load unread message counts
+      loadUnreadCounts();
     } catch {
       // ignore
     }
-  };
+  }, [currentUser?.id, loadUnreadCounts]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopVoiceRecognition();
+      spokenRef.current = false;
+      return;
+    }
+
+    // Load current user
+    try {
+      const authData = localStorage.getItem("mlingua_auth");
+      if (authData) {
+        setCurrentUser(JSON.parse(authData));
+      } else {
+        onClose();
+        router.push("/login");
+        return;
+      }
+    } catch {
+      onClose();
+      router.push("/login");
+      return;
+    }
+
+    // Load friends data
+    loadFriendsData();
+
+    // Listen for unread count updates
+    const handleUnreadUpdate = () => {
+      loadUnreadCounts();
+    };
+    window.addEventListener('unreadCountUpdated', handleUnreadUpdate);
+
+    // Announce drawer opening and start voice recognition if blind mode is enabled
+    try {
+      const mode = localStorage.getItem("accessibilityMode");
+      if (mode === "blind" && !spokenRef.current) {
+        spokenRef.current = true;
+        const friendsCount = friends.length;
+        const requestsCount = friendRequests.length;
+        const sentCount = sentRequests.length;
+        const message = `Friends page. You have ${friendsCount} friend${friendsCount !== 1 ? "s" : ""}, ${requestsCount} incoming request${requestsCount !== 1 ? "s" : ""}, and ${sentCount} sent request${sentCount !== 1 ? "s" : ""}. Say 'help' to hear all available commands, or 'close' to close.`;
+        speakMessage(message);
+      }
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      clearTypingTimer();
+      stopVoiceRecognition();
+      window.removeEventListener('unreadCountUpdated', handleUnreadUpdate);
+      if (typeof window !== "undefined") {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [isOpen, onClose, router, speakMessage, stopVoiceRecognition, clearTypingTimer, friends.length, friendRequests.length, sentRequests.length, loadUnreadCounts, loadFriendsData]);
+
+  // Announce when profile opens
+  useEffect(() => {
+    if (selectedFriend && isOpen) {
+      try {
+        const mode = localStorage.getItem("accessibilityMode");
+        if (mode === "blind") {
+          const profileMessage = `Profile for ${selectedFriend.name || selectedFriend.displayName || "Friend"}. ${selectedFriend.email ? `Email: ${selectedFriend.email}. ` : ""}${selectedFriend.birthday ? `Birthday: ${new Date(selectedFriend.birthday).toLocaleDateString()}. ` : ""}${selectedFriend.gender ? `Gender: ${selectedFriend.gender}. ` : ""}Say 'close' to close the profile, or 'remove' to unfriend.`;
+          speakMessage(profileMessage);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [selectedFriend, isOpen, speakMessage]);
+
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -661,30 +698,54 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   };
 
   const handleAddFriend = (user: any) => {
+    if (!currentUser?.id) return;
+    
     try {
       const newRequest = {
+        id: currentUser.id,
+        name: currentUser.displayName || currentUser.email,
+        username: currentUser.username,
+        email: currentUser.email,
+        avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
+        timestamp: new Date().toISOString(),
+      };
+
+      // Add to current user's sent requests
+      const sent = [...sentRequests, {
         id: user.id,
         name: user.displayName || user.email,
         username: user.username,
         email: user.email,
         avatar: (user.displayName || user.email || "U").charAt(0).toUpperCase(),
         timestamp: new Date().toISOString(),
-      };
-
-      const sent = [...sentRequests, newRequest];
+      }];
       setSentRequests(sent);
-      localStorage.setItem("mlingua_sent_requests", JSON.stringify(sent));
+      localStorage.setItem(`mlingua_sent_requests_${currentUser.id}`, JSON.stringify(sent));
+
+      // Add to receiver's incoming requests (simulate bidirectional)
+      // In a real app, this would be done server-side
+      const receiverRequestsKey = `mlingua_friend_requests_${user.id}`;
+      const receiverRequestsData = localStorage.getItem(receiverRequestsKey);
+      const receiverRequests = receiverRequestsData ? JSON.parse(receiverRequestsData) : [];
+      
+      // Check if request already exists
+      if (!receiverRequests.find((r: any) => r.id === currentUser.id)) {
+        receiverRequests.push(newRequest);
+        localStorage.setItem(receiverRequestsKey, JSON.stringify(receiverRequests));
+      }
 
       // Remove from search results
       setSearchResults(searchResults.filter((u: any) => u.id !== user.id));
       setSearchQuery("");
-      showNotification(`Friend request sent to ${newRequest.name}`, 'success');
+      showNotification(`Friend request sent to ${user.displayName || user.email}`, 'success');
     } catch {
       showNotification("Error sending friend request", 'error');
     }
   };
 
   const handleAcceptRequest = (request: any) => {
+    if (!currentUser?.id) return;
+    
     try {
       // Add to friends list
       const newFriend = {
@@ -700,10 +761,36 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       setFriends(updatedFriends);
       localStorage.setItem("mlingua_friends", JSON.stringify(updatedFriends));
 
-      // Remove from requests
+      // Remove from incoming requests
       const updatedRequests = friendRequests.filter((r: any) => r.id !== request.id);
       setFriendRequests(updatedRequests);
-      localStorage.setItem("mlingua_friend_requests", JSON.stringify(updatedRequests));
+      localStorage.setItem(`mlingua_friend_requests_${currentUser.id}`, JSON.stringify(updatedRequests));
+
+      // Also add current user to requester's friends list (bidirectional)
+      const requesterFriendsKey = "mlingua_friends";
+      const requesterFriendsData = localStorage.getItem(requesterFriendsKey);
+      const requesterFriends = requesterFriendsData ? JSON.parse(requesterFriendsData) : [];
+      
+      if (!requesterFriends.find((f: any) => f.id === currentUser.id)) {
+        requesterFriends.push({
+          id: currentUser.id,
+          name: currentUser.displayName || currentUser.email,
+          username: currentUser.username,
+          email: currentUser.email,
+          avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
+          status: "Offline",
+        });
+        localStorage.setItem(requesterFriendsKey, JSON.stringify(requesterFriends));
+      }
+
+      // Remove from requester's sent requests
+      const requesterSentKey = `mlingua_sent_requests_${request.id}`;
+      const requesterSentData = localStorage.getItem(requesterSentKey);
+      if (requesterSentData) {
+        const requesterSent = JSON.parse(requesterSentData);
+        const updatedRequesterSent = requesterSent.filter((r: any) => r.id !== currentUser.id);
+        localStorage.setItem(requesterSentKey, JSON.stringify(updatedRequesterSent));
+      }
 
       showNotification(`${request.name} added to your friends list`, 'success');
     } catch {
@@ -712,10 +799,22 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   };
 
   const handleDeclineRequest = (request: any) => {
+    if (!currentUser?.id) return;
+    
     try {
       const updatedRequests = friendRequests.filter((r: any) => r.id !== request.id);
       setFriendRequests(updatedRequests);
-      localStorage.setItem("mlingua_friend_requests", JSON.stringify(updatedRequests));
+      localStorage.setItem(`mlingua_friend_requests_${currentUser.id}`, JSON.stringify(updatedRequests));
+      
+      // Remove from requester's sent requests
+      const requesterSentKey = `mlingua_sent_requests_${request.id}`;
+      const requesterSentData = localStorage.getItem(requesterSentKey);
+      if (requesterSentData) {
+        const requesterSent = JSON.parse(requesterSentData);
+        const updatedRequesterSent = requesterSent.filter((r: any) => r.id !== currentUser.id);
+        localStorage.setItem(requesterSentKey, JSON.stringify(updatedRequesterSent));
+      }
+      
       showNotification(`Friend request from ${request.name} declined`, 'success');
     } catch {
       showNotification("Error declining friend request", 'error');
@@ -738,10 +837,22 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   };
 
   const handleCancelSentRequest = (request: any) => {
+    if (!currentUser?.id) return;
+    
     try {
       const updated = sentRequests.filter((r: any) => r.id !== request.id);
       setSentRequests(updated);
-      localStorage.setItem("mlingua_sent_requests", JSON.stringify(updated));
+      localStorage.setItem(`mlingua_sent_requests_${currentUser.id}`, JSON.stringify(updated));
+      
+      // Remove from receiver's incoming requests
+      const receiverRequestsKey = `mlingua_friend_requests_${request.id}`;
+      const receiverRequestsData = localStorage.getItem(receiverRequestsKey);
+      if (receiverRequestsData) {
+        const receiverRequests = JSON.parse(receiverRequestsData);
+        const updatedReceiverRequests = receiverRequests.filter((r: any) => r.id !== currentUser.id);
+        localStorage.setItem(receiverRequestsKey, JSON.stringify(updatedReceiverRequests));
+      }
+      
       showNotification(`Friend request to ${request.name} cancelled`, 'success');
     } catch {
       showNotification("Error cancelling friend request", 'error');
@@ -1082,17 +1193,35 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                           {friend.status || 'Offline'}
                         </div>
                       </div>
+                      {unreadCounts[friend.id] > 0 && (
+                        <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                          {unreadCounts[friend.id] > 9 ? '9+' : unreadCounts[friend.id]}
+                        </span>
+                      )}
                     </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFriend(friend);
-                      }}
-                      className="px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 transition-colors flex-shrink-0 ml-2"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex gap-2 flex-shrink-0 ml-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setChatFriend(friend);
+                        }}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors"
+                        title="Chat"
+                      >
+                        💬
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveFriend(friend);
+                        }}
+                        className="px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1311,29 +1440,52 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex flex-col gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedFriend(null);
-                      handleRemoveFriend(selectedFriend);
+                      setChatFriend(selectedFriend);
                     }}
-                    className="flex-1 px-4 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 transition-colors"
+                    className="w-full px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors flex items-center justify-center gap-2"
                   >
-                    Remove Friend
+                    <span>💬</span>
+                    <span>Start Chat</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFriend(null)}
-                    className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-600 focus-visible:ring-offset-2 transition-colors"
-                  >
-                    Close
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedFriend(null);
+                        handleRemoveFriend(selectedFriend);
+                      }}
+                      className="flex-1 px-4 py-2.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-medium rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2 transition-colors"
+                    >
+                      Remove Friend
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFriend(null)}
+                      className="flex-1 px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-600 focus-visible:ring-offset-2 transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </>
+      )}
+
+      {/* Chat Window */}
+      {chatFriend && currentUser && (
+        <ChatWindow
+          isOpen={!!chatFriend}
+          onClose={() => setChatFriend(null)}
+          friend={chatFriend}
+          currentUser={currentUser}
+        />
       )}
     </>
   );
