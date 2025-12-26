@@ -36,21 +36,21 @@ export default function HomeCards() {
       ) : null}
 
       <div className="max-w-4xl mx-auto mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Speech to Text */}
+        {/* Speech to Text (navigates) */}
         <article aria-labelledby="stt-title">
           <h3 id="stt-title" className="sr-only">
             Speech to Text
           </h3>
-          <button
-            type="button"
-            onClick={showComingSoon}
+          <Link
+            href="/home/speech-to-text"
             onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+              // Support Space to activate the link
+              if (e.key === " " || e.key === "Spacebar" || e.code === "Space") {
                 e.preventDefault();
-                showComingSoon(e);
+                (e.currentTarget as HTMLAnchorElement).click();
               }
             }}
-            className="w-full text-left bg-white border border-slate-200 rounded-lg p-6 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
+            className="w-full block text-left bg-white border border-slate-200 rounded-lg p-6 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
             aria-describedby="stt-desc"
           >
             <div className="flex items-start gap-4">
@@ -66,7 +66,7 @@ export default function HomeCards() {
                 </p>
               </div>
             </div>
-          </button>
+          </Link>
         </article>
 
         {/* Text to Speech (navigates) */}
@@ -172,37 +172,37 @@ export default function HomeCards() {
           </button>
         </article>
 
-        {/* Translation (coming soon for now) */}
+        {/* Translation (navigates) */}
         <article aria-labelledby="trans-title">
           <h3 id="trans-title" className="sr-only">
             Translation
           </h3>
-          <button
-            type="button"
-            onClick={showComingSoon}
+          <Link
+            href="/home/translation"
             onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+              // Support Space to activate the link
+              if (e.key === " " || e.key === "Spacebar" || e.code === "Space") {
                 e.preventDefault();
-                showComingSoon(e);
+                (e.currentTarget as HTMLAnchorElement).click();
               }
             }}
-            className="w-full text-left bg-white border border-slate-200 rounded-lg p-6 shadow-sm opacity-60 cursor-not-allowed focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
-            title="Coming soon"
-            aria-disabled="true"
+            className="w-full block text-left bg-white border border-slate-200 rounded-lg p-6 shadow-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
             aria-describedby="trans-desc"
           >
             <div className="flex items-start gap-4">
               <div className="shrink-0">
-                <span className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-slate-100 text-slate-500 font-semibold">
+                <span className="inline-flex items-center justify-center h-12 w-12 rounded-md bg-indigo-50 text-indigo-700 font-semibold">
                   TR
                 </span>
               </div>
               <div>
-                <div className="text-xl font-semibold text-slate-700">Translation</div>
-                <p id="trans-desc" className="mt-1 text-sm text-slate-600">Convert text or speech between languages. (Coming soon)</p>
+                <div className="text-xl font-semibold">Translation</div>
+                <p id="trans-desc" className="mt-1 text-sm text-slate-600">
+                  Convert text or speech between languages.
+                </p>
               </div>
             </div>
-          </button>
+          </Link>
         </article>
 
         {/* Text to Sign - Coming soon */}

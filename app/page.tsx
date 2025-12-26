@@ -139,9 +139,14 @@ export default function Home() {
 
   const handleStandard = useCallback(() => {
     // Save standard mode and navigate silently, ensuring any speech or recognition is canceled immediately
+    // Permanently suppress voice from starting
     if (typeof window !== "undefined") {
       try {
         stopSpeechAndSuppressRecognition();
+        // Permanently prevent voice from starting
+        suppressStartRecognitionRef.current = true;
+        unlockedRef.current = false; // Reset unlock state
+        instructionSpokenRef.current = false;
       } catch (_e) {
         // ignore
       }
@@ -219,14 +224,39 @@ export default function Home() {
       return;
     }
 
-    if (text.includes("repeat")) {
+    if (text.includes("repeat") || text.includes("help")) {
       stopRecognition();
-      const instruction = "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'repeat' to hear these options again.";
+      const instruction = "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'help' or 'repeat' to hear these options again.";
       speakInstruction(instruction, () => { startRecognition(); isListeningRef.current = true; });
       return;
     }
 
-    if (recognitionRetryRef.current < 1) { recognitionRetryRef.current++; setTimeout(() => startRecognition(), 500); } else { recognitionRetryRef.current = 0; }
+    // If command not recognized, notify user and offer help
+    const unrecognizedMessage = "Command not recognized. Say 'help' to hear the available commands again.";
+    stopRecognition();
+    try {
+      const synth = window.speechSynthesis;
+      if (synth) {
+        try { synth.cancel(); } catch (_e) {}
+        isSpeakingRef.current = true;
+        const u = new SpeechSynthesisUtterance(unrecognizedMessage);
+        u.lang = "en-US";
+        u.addEventListener("end", () => {
+          isSpeakingRef.current = false;
+          if (!suppressStartRecognitionRef.current) {
+            startRecognition();
+            isListeningRef.current = true;
+          }
+        });
+        synth.speak(u);
+      }
+    } catch (_e) {
+      isSpeakingRef.current = false;
+      if (!suppressStartRecognitionRef.current) {
+        startRecognition();
+        isListeningRef.current = true;
+      }
+    }
   }, [router, speakInstruction, startRecognition, stopRecognition, stopSpeechAndSuppressRecognition]);
 
   // First-interaction audio unlock and keyboard shortcuts
@@ -244,12 +274,25 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    function onFirstInteraction() {
+    function onVolumeKeyPress(e: KeyboardEvent) {
+      // Only trigger on volume up/down keys
+      // Volume Up: code "AudioVolumeUp" or keyCode 175
+      // Volume Down: code "AudioVolumeDown" or keyCode 174
+      const isVolumeUp = e.code === "AudioVolumeUp" || e.keyCode === 175;
+      const isVolumeDown = e.code === "AudioVolumeDown" || e.keyCode === 174;
+      
+      if (!isVolumeUp && !isVolumeDown) return;
+      
+      // If user already clicked "Continue Without Blind Mode", never start voice
+      if (suppressStartRecognitionRef.current) return;
+      
+      // If already unlocked, don't trigger again
       if (unlockedRef.current) return;
+      
       unlockedRef.current = true;
 
-      const instruction =
-        "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'repeat' to hear these options again.";
+          const instruction =
+            "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'help' or 'repeat' to hear these options again.";
 
       // Use centralized speakInstruction helper which ensures recognition is stopped before speaking and restarts after finishing
       speakInstruction(instruction);
@@ -302,15 +345,12 @@ export default function Home() {
       }
     }
 
-    // Set up the first interaction handlers
-
-    window.addEventListener("click", onFirstInteraction, { once: true });
-    window.addEventListener("keydown", onFirstInteraction, { once: true });
+    // Only listen for volume up/down keys
+    window.addEventListener("keydown", onVolumeKeyPress);
 
     // cleanup
     return () => {
-      window.removeEventListener("click", onFirstInteraction);
-      window.removeEventListener("keydown", onFirstInteraction);
+      window.removeEventListener("keydown", onVolumeKeyPress);
       window.removeEventListener("keydown", onKeyDown);
       stopRecognition();
     };

@@ -3,12 +3,12 @@
 import { useRouter } from "next/navigation";
 import React from "react";
 
-export default function TextToSpeechCard() {
+export default function SpeechToTextCard() {
   const router = useRouter();
 
   const activate = (e?: React.MouseEvent | React.KeyboardEvent) => {
     try {
-      router.push("/home/text-to-speech");
+      router.push("/home/speech-to-text");
     } catch (err) {
       // ignore navigation errors in dev
       console.error(err);
@@ -34,9 +34,10 @@ export default function TextToSpeechCard() {
       }}
       className="border-2 border-gray-200 dark:border-gray-700 rounded-xl p-8 bg-white dark:bg-gray-800 hover:border-blue-500 dark:hover:border-blue-400 focus-visible:border-blue-500 focus-visible:outline-none"
     >
-      <div className="text-3xl mb-4">🔊</div>
-      <div className="text-lg font-medium text-gray-900 dark:text-gray-100">Text to Speech</div>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Hear written text read aloud clearly</p>
+      <div className="text-3xl mb-4">🎤</div>
+      <div className="text-lg font-medium text-gray-900 dark:text-gray-100">Speech to Text</div>
+      <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Convert spoken words into readable text instantly</p>
     </article>
   );
 }
+

@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import VoiceDropdown from "../VoiceDropdown";
 
 export default function TextToSpeechPage() {
+  const router = useRouter();
   const [text, setText] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  
+  // Voice navigation refs
+  const voiceRecognitionRef = useRef<any | null>(null);
+  const isVoiceListeningRef = useRef(false);
+  const isVoiceSpeakingRef = useRef(false);
+  const spokenRef = useRef(false);
+  const readAloudBtnRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     // Cleanup on unmount
@@ -82,14 +91,207 @@ export default function TextToSpeechPage() {
   // selected voice (visual only for now)
   const [selectedVoice, setSelectedVoice] = useState("microsoft-zira");
 
+  // Voice navigation functions
+  const stopVoiceRecognition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (voiceRecognitionRef.current) {
+        try {
+          voiceRecognitionRef.current.onresult = null;
+          voiceRecognitionRef.current.onend = null;
+          voiceRecognitionRef.current.onerror = null;
+          voiceRecognitionRef.current.stop();
+        } catch (_e) {
+          // ignore
+        }
+      }
+    } finally {
+      voiceRecognitionRef.current = null;
+      isVoiceListeningRef.current = false;
+    }
+  }, []);
+
+  const startVoiceRecognition = useCallback(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const mode = localStorage.getItem("accessibilityMode");
+      if (mode !== "blind") return;
+    } catch (_e) {
+      return;
+    }
+
+    if (isVoiceSpeakingRef.current) return;
+    if (isVoiceListeningRef.current) return;
+    if (isSpeaking) return; // Don't listen while speaking
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) return;
+
+    try {
+      const r = new SpeechRec();
+      r.lang = "en-US";
+      r.continuous = false;
+      r.interimResults = false;
+      r.maxAlternatives = 1;
+
+      r.onresult = (ev: any) => {
+        try {
+          const transcript = (ev.results && ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript) || "";
+          const textCmd = transcript.trim().toLowerCase();
+          if (!textCmd) return;
+
+          stopVoiceRecognition();
+
+          if (textCmd.includes("read") || textCmd.includes("read aloud")) {
+            if (text.trim()) {
+              readAloudBtnRef.current?.click();
+            }
+            return;
+          }
+
+          if (textCmd.includes("back") || textCmd.includes("go back")) {
+            router.push("/home");
+            return;
+          }
+
+          if (textCmd.includes("help") || textCmd.includes("repeat")) {
+            const message = "Text to Speech page. Enter text and say 'read' or 'read aloud' to hear it. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
+            try {
+              const synth = window.speechSynthesis;
+              if (synth) {
+                try { synth.cancel(); } catch (_e) {}
+                isVoiceSpeakingRef.current = true;
+                const u = new SpeechSynthesisUtterance(message);
+                u.lang = "en-US";
+                u.addEventListener("end", () => {
+                  isVoiceSpeakingRef.current = false;
+                  startVoiceRecognition();
+                });
+                synth.speak(u);
+              }
+            } catch (_e) {}
+            return;
+          }
+
+          // If command not recognized
+          const unrecognizedMessage = "Command not recognized. Say 'help' to hear the available commands again.";
+          try {
+            const synth = window.speechSynthesis;
+            if (synth) {
+              try { synth.cancel(); } catch (_e) {}
+              isVoiceSpeakingRef.current = true;
+              const u = new SpeechSynthesisUtterance(unrecognizedMessage);
+              u.lang = "en-US";
+              u.addEventListener("end", () => {
+                isVoiceSpeakingRef.current = false;
+                startVoiceRecognition();
+              });
+              synth.speak(u);
+            }
+          } catch (_e) {}
+        } catch (_e) {
+          // ignore
+        }
+      };
+
+      r.onerror = () => {
+        stopVoiceRecognition();
+      };
+
+      r.onend = () => {
+        isVoiceListeningRef.current = false;
+        voiceRecognitionRef.current = null;
+        try {
+          const mode = localStorage.getItem("accessibilityMode");
+          if (mode === "blind" && !isVoiceSpeakingRef.current && !isSpeaking) {
+            setTimeout(() => startVoiceRecognition(), 300);
+          }
+        } catch (_e) {
+          // ignore
+        }
+      };
+
+      voiceRecognitionRef.current = r;
+      try {
+        r.start();
+        isVoiceListeningRef.current = true;
+      } catch (_err) {
+        voiceRecognitionRef.current = null;
+        isVoiceListeningRef.current = false;
+      }
+    } catch (_e) {
+      // ignore
+    }
+  }, [router, stopVoiceRecognition, text, isSpeaking]);
+
+  // Voice navigation setup
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    // Always reset spokenRef on mount to ensure it works on refresh
+    spokenRef.current = false;
+
+    let timer: NodeJS.Timeout | null = null;
+    let frameId: number | null = null;
+
+    // Use requestAnimationFrame to ensure DOM is ready
+    frameId = requestAnimationFrame(() => {
+      // Then use a small timeout to ensure speech synthesis is ready
+      timer = setTimeout(() => {
+        try {
+          const mode = localStorage.getItem("accessibilityMode");
+          if (mode === "blind" && !spokenRef.current) {
+            spokenRef.current = true;
+            const message = "Text to Speech page. Enter text and say 'read' or 'read aloud' to hear it. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
+            try {
+              const synth = window.speechSynthesis;
+              if (synth) {
+                try { synth.cancel(); } catch (_e) {}
+                isVoiceSpeakingRef.current = true;
+                const u = new SpeechSynthesisUtterance(message);
+                u.lang = "en-US";
+                u.addEventListener("end", () => {
+                  isVoiceSpeakingRef.current = false;
+                  startVoiceRecognition();
+                });
+                synth.speak(u);
+              }
+            } catch (_e) {
+              // fail silently
+            }
+          }
+        } catch (e) {
+          // fail silently
+        }
+      }, 200);
+    });
+
+    return () => {
+      if (frameId !== null) {
+        cancelAnimationFrame(frameId);
+      }
+      if (timer) {
+        clearTimeout(timer);
+      }
+      stopVoiceRecognition();
+      try {
+        if (typeof window !== "undefined") {
+          window.speechSynthesis.cancel();
+        }
+      } catch (_e) {
+        // ignore
+      }
+    };
+  }, [startVoiceRecognition, stopVoiceRecognition]);
+
   return (
-    <main className="min-h-screen bg-white pt-12 flex items-start justify-center">
+    <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-6 text-left">
         <div className="mb-6">
           <button
             type="button"
-            onClick={() => history.back()}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-sm text-sm text-gray-700 bg-white focus-visible:outline-none focus-visible:border-blue-500"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
             aria-label="Go back"
           >
             <span aria-hidden>←</span>
@@ -97,9 +299,9 @@ export default function TextToSpeechPage() {
           </button>
         </div>
 
-        <h1 className="text-2xl font-bold mb-3 text-gray-900">Text to Speech</h1>
+        <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Text to Speech</h1>
 
-        <label htmlFor="tts-text" className="block text-sm font-medium text-gray-900 mb-2">
+        <label htmlFor="tts-text" className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
           Enter text to be read aloud:
         </label>
 
@@ -109,12 +311,12 @@ export default function TextToSpeechPage() {
           placeholder="Type or paste text here..."
           value={text}
           onChange={(e) => setText(e.target.value)}
-          className="w-full h-60 px-4 py-4 border-2 border-gray-300 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 placeholder-gray-400 resize"
+          className="w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize"
         />
 
         <div className="flex items-center gap-8 mt-4">
           <div className="flex items-center gap-3">
-            <label htmlFor="voice-select" className="text-sm font-medium text-gray-900">Voice:</label>
+            <label htmlFor="voice-select" className="text-sm font-medium text-gray-900 dark:text-gray-100">Voice:</label>
             {/* Custom voice dropdown to reproduce options list visuals */}
             <div id="voice-select">
               <VoiceDropdown
@@ -149,10 +351,10 @@ export default function TextToSpeechPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <label htmlFor="speed-select" className="text-sm font-medium text-gray-900">Speed:</label>
+            <label htmlFor="speed-select" className="text-sm font-medium text-gray-900 dark:text-gray-100">Speed:</label>
             <select
               id="speed-select"
-              className="px-4 py-2 border-2 border-gray-300 rounded-md text-sm h-10 w-36 bg-white text-gray-900 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:border-blue-600"
+              className="px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-sm h-10 w-36 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
               aria-label="Speed selector"
               defaultValue="1"
             >
@@ -165,6 +367,7 @@ export default function TextToSpeechPage() {
 
         <div className="mt-6">
           <button
+            ref={readAloudBtnRef}
             type="button"
             onClick={speak}
             className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
@@ -186,7 +389,7 @@ export default function TextToSpeechPage() {
             Stop
           </button>
 
-          <div className="mt-4 text-sm text-gray-600" aria-live="polite">
+          <div className="mt-4 text-sm text-gray-600 dark:text-gray-400" aria-live="polite">
             {isSpeaking ? "Playing..." : ""}
           </div>
         </div>

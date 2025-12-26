@@ -1,0 +1,62 @@
+{
+  "name": "M-Lingua - Universal Communication Platform",
+  "short_name": "M-Lingua",
+  "description": "Universal, AI-powered communication platform for deaf, blind, and multilingual users. Speak. Sign. Hear. Understand.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["accessibility", "communication", "education"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Speech to Text",
+      "short_name": "STT",
+      "description": "Convert speech to text",
+      "url": "/home/speech-to-text",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Text to Speech",
+      "short_name": "TTS",
+      "description": "Convert text to speech",
+      "url": "/home/text-to-speech",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Translation",
+      "short_name": "Translate",
+      "description": "Translate text between languages",
+      "url": "/home/translation",
+      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
+    }
+  ]
+}
+

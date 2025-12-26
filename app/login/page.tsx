@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Script from "next/script";
 
 export default function Login() {
   const router = useRouter();
   const spokenRef = useRef(false);
+  const [currentMode, setCurrentMode] = useState<string>("standard");
+  const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
 
   // Focusable element refs
   const emailRef = useRef<HTMLInputElement | null>(null);
@@ -22,6 +25,18 @@ export default function Login() {
   const typingTimerRef = useRef<number | null>(null);
   // Current voice stage: 'intent' (choose login/signup) or 'action' (submit/repeat)
   const stageRef = useRef<'intent' | 'action'>('intent');
+
+  // Check current accessibility mode
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const mode = localStorage.getItem("accessibilityMode") || "standard";
+        setCurrentMode(mode);
+      } catch {
+        setCurrentMode("standard");
+      }
+    }
+  }, []);
 
   const stopRecognition = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -110,7 +125,7 @@ export default function Login() {
             if (text.includes("login")) {
               // Move to action stage: speak action instructions then listen for submit/repeat
               stageRef.current = 'action';
-              const instr = "Login selected. Enter your email and password. Say 'submit' to log in. Say 'repeat' to hear these instructions again.";
+              const instr = "Login selected. Enter your email and password. Say 'submit' to log in. Say 'help' or 'repeat' to hear these instructions again.";
               try {
                 const synth = window.speechSynthesis;
                 if (synth) {
@@ -136,9 +151,9 @@ export default function Login() {
               return;
             }
 
-            if (text.includes("repeat")) {
+            if (text.includes("repeat") || text.includes("help")) {
               // replay intent message
-              const message = "You are on the login page. Say 'login' to sign in to an existing account. Say 'sign up' to create a new account.";
+              const message = "You are on the login page. Say 'login' to sign in to an existing account. Say 'sign up' to create a new account. Say 'help' or 'repeat' to hear these options again.";
               try {
                 const synth = window.speechSynthesis;
                 if (synth) {
@@ -156,6 +171,22 @@ export default function Login() {
               return;
             }
 
+            // If command not recognized, notify user and offer help
+            const unrecognizedMessage = "Command not recognized. Say 'help' to hear the available commands again.";
+            try {
+              const synth = window.speechSynthesis;
+              if (synth) {
+                try { synth.cancel(); } catch (_e) {}
+                isSpeakingRef.current = true;
+                const u = new SpeechSynthesisUtterance(unrecognizedMessage);
+                u.lang = "en-US";
+                u.addEventListener("end", () => {
+                  isSpeakingRef.current = false;
+                  startRecognition();
+                });
+                synth.speak(u);
+              }
+            } catch (_e) {}
             return;
           }
 
@@ -171,8 +202,8 @@ export default function Login() {
               return;
             }
 
-            if (text.includes("repeat")) {
-              const instr = "Login selected. Enter your email and password. Say 'submit' to log in. Say 'repeat' to hear these instructions again.";
+            if (text.includes("repeat") || text.includes("help")) {
+              const instr = "Login selected. Enter your email and password. Say 'submit' to log in. Say 'help' or 'repeat' to hear these instructions again.";
               try {
                 const synth = window.speechSynthesis;
                 if (synth) {
@@ -189,6 +220,23 @@ export default function Login() {
               } catch (_e) {}
               return;
             }
+
+            // If command not recognized, notify user and offer help
+            const unrecognizedMessage = "Command not recognized. Say 'help' to hear the available commands again.";
+            try {
+              const synth = window.speechSynthesis;
+              if (synth) {
+                try { synth.cancel(); } catch (_e) {}
+                isSpeakingRef.current = true;
+                const u = new SpeechSynthesisUtterance(unrecognizedMessage);
+                u.lang = "en-US";
+                u.addEventListener("end", () => {
+                  isSpeakingRef.current = false;
+                  startRecognition();
+                });
+                synth.speak(u);
+              }
+            } catch (_e) {}
           }
         } catch (_e) {
           // ignore
@@ -244,7 +292,7 @@ export default function Login() {
 
         try {
           const message =
-            "You are on the login page. Say 'login' to sign in to an existing account. Say 'sign up' to create a new account.";
+            "You are on the login page. Say 'login' to sign in to an existing account. Say 'sign up' to create a new account. Say 'help' or 'repeat' to hear these options again.";
           const u = new SpeechSynthesisUtterance(message);
           u.lang = "en-US";
           try { synth.cancel(); } catch (_e) {}
@@ -282,7 +330,40 @@ export default function Login() {
       // ignore
     }
 
+    const formData = new FormData(e.target);
+    const email = (formData.get("email") as string)?.toLowerCase().trim();
+    const password = formData.get("password") as string;
+
+    if (!email || !password) {
+      alert("Email and password are required");
+      return;
+    }
+
     try {
+      // Get users from localStorage
+      const usersStr = localStorage.getItem("mlingua_users");
+      const users = usersStr ? JSON.parse(usersStr) : [];
+      
+      // Find user by email
+      const user = users.find((u: any) => u.email === email);
+      
+      if (!user) {
+        alert("Invalid email or password");
+        return;
+      }
+
+      // For prototype: simple password check (in production, use hashed passwords)
+      if (user.password !== password) {
+        alert("Invalid email or password");
+        return;
+      }
+
+      // Save current user to localStorage (without password)
+      const userForSession = { ...user };
+      delete userForSession.password;
+      delete userForSession.passwordHash;
+      localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
+
       const synth = (window as any).speechSynthesis;
       if (synth) {
         try {
@@ -308,22 +389,188 @@ export default function Login() {
           // ignore
         }
       }
-    } catch (_e) {
-      // ignore
+    } catch (error) {
+      console.error("Login error:", error);
+      alert("Error signing in. Please try again.");
+      return;
     }
 
-    // Proceed with navigation for this prototype
+    // Navigate to home
     try {
-      const routerAny: any = router;
-      routerAny.push("/home");
+      router.push("/home");
     } catch (_e) {
       // ignore
     }
   }
 
+  const handleGoogleSignIn = async () => {
+    if (typeof window === "undefined" || !(window as any).google) {
+      alert("Google Sign-In is not available. Please refresh the page.");
+      return;
+    }
+
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId || clientId === "") {
+      alert(
+        "Google Sign-In is not configured. Please add NEXT_PUBLIC_GOOGLE_CLIENT_ID to your .env.local file.\n\n" +
+        "To set up Google Sign-In:\n" +
+        "1. Go to https://console.cloud.google.com/\n" +
+        "2. Create a project and enable Google+ API\n" +
+        "3. Create OAuth 2.0 credentials\n" +
+        "4. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id to .env.local"
+      );
+      return;
+    }
+
+    try {
+      const google = (window as any).google;
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "email profile",
+        callback: async (response: any) => {
+          if (!response.access_token) {
+            alert("Google Sign-In was cancelled or failed.");
+            return;
+          }
+
+          try {
+            // Get user info from Google
+            const userInfoResponse = await fetch(
+              `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`
+            );
+            const userInfo = await userInfoResponse.json();
+
+            if (!userInfo.email) {
+              alert("Unable to get email from Google account.");
+              return;
+            }
+
+            const email = userInfo.email.toLowerCase();
+            const displayName = userInfo.name || userInfo.email.split("@")[0];
+            const photoURL = userInfo.picture || null;
+            const firstName = displayName.split(" ")[0];
+
+            // Get users from localStorage
+            const usersStr = localStorage.getItem("mlingua_users");
+            const users = usersStr ? JSON.parse(usersStr) : [];
+
+            // Check if user exists
+            let user = users.find((u: any) => u.email === email);
+
+            if (!user) {
+              // Create new user
+              let username = firstName.toLowerCase();
+              let counter = 1;
+              while (users.find((u: any) => u.username === username)) {
+                username = `${firstName.toLowerCase()}${counter}`;
+                counter++;
+              }
+
+              user = {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                email: email,
+                displayName: displayName,
+                username: username,
+                photoURL: photoURL,
+                createdAt: new Date().toISOString(),
+                preferences: {},
+                history: [],
+                googleId: userInfo.id,
+              };
+
+              users.push(user);
+              localStorage.setItem("mlingua_users", JSON.stringify(users));
+            } else {
+              // Update existing user with Google info if needed
+              if (photoURL && !user.photoURL) {
+                user.photoURL = photoURL;
+              }
+              if (displayName && !user.displayName) {
+                user.displayName = displayName;
+              }
+              user.googleId = userInfo.id;
+              const userIndex = users.findIndex((u: any) => u.id === user.id);
+              if (userIndex !== -1) {
+                users[userIndex] = user;
+                localStorage.setItem("mlingua_users", JSON.stringify(users));
+              }
+            }
+
+            // Save current user (without password)
+            const userForSession = { ...user };
+            delete userForSession.password;
+            delete userForSession.passwordHash;
+            localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
+
+            // Announce success for blind mode
+            try {
+              const mode = localStorage.getItem("accessibilityMode");
+              if (mode === "blind") {
+                const synth = window.speechSynthesis;
+                if (synth) {
+                  const u = new SpeechSynthesisUtterance("Sign in successful.");
+                  u.lang = "en-US";
+                  synth.speak(u);
+                }
+              }
+            } catch (_e) {
+              // ignore
+            }
+
+            // Navigate to home
+            router.push("/home");
+          } catch (error) {
+            console.error("Google Sign-In error:", error);
+            alert("Error signing in with Google. Please try again.");
+          }
+        },
+      });
+
+      client.requestAccessToken();
+    } catch (error) {
+      console.error("Google Sign-In setup error:", error);
+      alert("Error setting up Google Sign-In. Please try again.");
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <Script
+        src="https://accounts.google.com/gsi/client"
+        onLoad={() => setIsGoogleLoaded(true)}
+        strategy="lazyOnload"
+      />
       <section className="w-full max-w-md bg-white border border-slate-200 rounded-lg p-8 shadow-sm">
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                stopRecognition();
+                // Stop all speech synthesis
+                if (typeof window !== "undefined") {
+                  const synth = window.speechSynthesis;
+                  if (synth) {
+                    try { synth.cancel(); } catch (_e) {}
+                  }
+                }
+                isSpeakingRef.current = false;
+                isListeningRef.current = false;
+              } catch (_e) {
+                // ignore
+              }
+              router.push("/");
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-md text-sm text-slate-700 bg-white hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50"
+            aria-label="Change accessibility mode"
+          >
+            <span>←</span>
+            <span>Change Mode</span>
+          </button>
+          <p className="mt-2 text-xs text-slate-500">
+            Current mode: <span className="font-medium">{currentMode === "blind" ? "Blind Mode" : "Standard Mode"}</span>
+          </p>
+        </div>
         <h1 className="text-2xl font-bold mb-4">Login to M-Lingua</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="login-heading">
@@ -373,6 +620,45 @@ export default function Login() {
             </button>
           </div>
         </form>
+
+        <div className="mt-6">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-slate-500">Or</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={!isGoogleLoaded || !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+            className="mt-4 w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? "Google Sign-In not configured. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID to .env.local" : ""}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            <span>Sign in with Google</span>
+          </button>
+        </div>
 
         <p className="mt-4 text-sm text-slate-600">No authentication is implemented in this prototype.</p>
 
