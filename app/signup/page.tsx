@@ -326,8 +326,7 @@ export default function Signup() {
       localStorage.setItem("mlingua_users", JSON.stringify(users));
 
       // Auto-login: save current user (without password)
-      const userForSession = { ...user };
-      delete userForSession.password;
+      const { password: _, ...userForSession } = user;
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 
       // Read accessibility mode and optionally announce a success message for blind users.
