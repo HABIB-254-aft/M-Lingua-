@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import SignLanguageAvatar from "../SignLanguageAvatar";
 
 interface ConversationMessage {
   text: string;
   mode: string;
   timestamp: string;
   isLocal: boolean;
+  translatedText?: string;
+  targetLang?: string;
 }
 
 export default function ConversationModePage() {
@@ -20,6 +23,8 @@ export default function ConversationModePage() {
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [targetLang, setTargetLang] = useState("es"); // Default translation target
+  const [isTranslating, setIsTranslating] = useState(false);
   const recognitionRef = useRef<any | null>(null);
   const isRecordingRef = useRef(false);
   
@@ -61,6 +66,28 @@ export default function ConversationModePage() {
     setConversationHistory([]);
   };
 
+  const translateText = async (text: string, sourceLang: string = "en", targetLang: string): Promise<string | null> => {
+    if (sourceLang === targetLang) return null;
+    
+    try {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      });
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      if (data.responseStatus === 200 && data.responseData?.translatedText) {
+        return data.responseData.translatedText;
+      }
+    } catch (error) {
+      console.error("Translation error:", error);
+    }
+    return null;
+  };
+
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
 
@@ -71,31 +98,49 @@ export default function ConversationModePage() {
       isLocal: true,
     };
 
+    // Add message immediately for responsive UI
     setConversationHistory((prev) => [...prev, message]);
     setInputText("");
 
-    // Process based on mode
-    if (selectedMode === "deaf") {
-      // Sign language animation would go here
-      console.log("Sign language for:", text);
-    } else if (selectedMode === "blind") {
-      // Text to speech
-      if (typeof window !== "undefined") {
-        const synth = window.speechSynthesis;
-        if (synth) {
-          try {
-            synth.cancel();
-            const u = new SpeechSynthesisUtterance(text);
-            u.lang = "en-US";
-            synth.speak(u);
-          } catch {
-            // ignore
-          }
+    // Process based on mode - ALL modes show multiple outputs simultaneously
+    const trimmedText = text.trim();
+
+    // 1. ALWAYS show text (already in message)
+    
+    // 2. ALWAYS show sign language animation (for deaf users and visual learners)
+    // (Sign animation is handled by SignLanguageAvatar component in UI)
+    
+    // 3. ALWAYS speak text (for blind users)
+    if (typeof window !== "undefined") {
+      const synth = window.speechSynthesis;
+      if (synth) {
+        try {
+          synth.cancel();
+          const u = new SpeechSynthesisUtterance(trimmedText);
+          u.lang = "en-US";
+          synth.speak(u);
+        } catch {
+          // ignore
         }
       }
-    } else if (selectedMode === "multilingual") {
-      // Translation would go here (simplified for v1)
-      console.log("Translation for:", text);
+    }
+
+    // 4. If multilingual mode, translate and update message
+    if (selectedMode === "multilingual") {
+      setIsTranslating(true);
+      const translated = await translateText(trimmedText, "en", targetLang);
+      if (translated) {
+        setConversationHistory((prev) => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.text === trimmedText) {
+            lastMsg.translatedText = translated;
+            lastMsg.targetLang = targetLang;
+          }
+          return updated;
+        });
+      }
+      setIsTranslating(false);
     }
   };
 
@@ -468,7 +513,7 @@ export default function ConversationModePage() {
 
   return (
     <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
-      <div className="w-full max-w-4xl mx-auto px-6 text-left">
+      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 text-left">
         <div className="mb-6">
           <button
             type="button"
@@ -481,7 +526,7 @@ export default function ConversationModePage() {
           </button>
         </div>
 
-        <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Conversation Mode</h1>
+        <h1 className="text-xl sm:text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Conversation Mode</h1>
 
         {!showModeSelection && !isStarted && (
           <div className="mb-6">
@@ -582,9 +627,9 @@ export default function ConversationModePage() {
 
         {showModeSelection && !isStarted && (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Select Your Communication Mode</h2>
-            <div className="space-y-3 mb-6">
-              <label className="flex items-center gap-3 p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Select Your Communication Mode</h2>
+            <div className="space-y-2 sm:space-y-3 mb-6">
+              <label className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
                 <input
                   type="radio"
                   name="userMode"
@@ -593,9 +638,9 @@ export default function ConversationModePage() {
                   onChange={(e) => setSelectedMode(e.target.value)}
                   className="w-4 h-4 text-blue-600"
                 />
-                <span className="text-gray-900 dark:text-gray-100">Deaf User (Sign Language)</span>
+                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100">Deaf User (Sign Language)</span>
               </label>
-              <label className="flex items-center gap-3 p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
+              <label className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
                 <input
                   type="radio"
                   name="userMode"
@@ -604,9 +649,9 @@ export default function ConversationModePage() {
                   onChange={(e) => setSelectedMode(e.target.value)}
                   className="w-4 h-4 text-blue-600"
                 />
-                <span className="text-gray-900 dark:text-gray-100">Blind User (Audio)</span>
+                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100">Blind User (Audio)</span>
               </label>
-              <label className="flex items-center gap-3 p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
+              <label className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
                 <input
                   type="radio"
                   name="userMode"
@@ -615,9 +660,9 @@ export default function ConversationModePage() {
                   onChange={(e) => setSelectedMode(e.target.value)}
                   className="w-4 h-4 text-blue-600"
                 />
-                <span className="text-gray-900 dark:text-gray-100">Multilingual User (Translation)</span>
+                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100">Multilingual User (Translation)</span>
               </label>
-              <label className="flex items-center gap-3 p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
+              <label className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-800">
                 <input
                   type="radio"
                   name="userMode"
@@ -626,108 +671,188 @@ export default function ConversationModePage() {
                   onChange={(e) => setSelectedMode(e.target.value)}
                   className="w-4 h-4 text-blue-600"
                 />
-                <span className="text-gray-900 dark:text-gray-100">Standard (Text & Speech)</span>
+                <span className="text-sm sm:text-base text-gray-900 dark:text-gray-100">Standard (Text & Speech)</span>
               </label>
             </div>
-            <button
-              type="button"
-              onClick={startConversation}
-              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg focus-visible:outline-none focus-visible:border-blue-500"
-              aria-label="Confirm mode and start conversation"
-            >
-              Confirm & Start
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowModeSelection(false);
-                setCreatedRoomCode("");
-                setRoomCode("");
-              }}
-              className="ml-3 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
-            >
-              Back
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={startConversation}
+                className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white text-sm sm:text-base font-semibold rounded-lg focus-visible:outline-none focus-visible:border-blue-500"
+                aria-label="Confirm mode and start conversation"
+              >
+                Confirm & Start
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModeSelection(false);
+                  setCreatedRoomCode("");
+                  setRoomCode("");
+                }}
+                className="w-full sm:w-auto px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+              >
+                Back
+              </button>
+            </div>
           </div>
         )}
 
         {isStarted && (
           <div className="mb-6">
-            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-sm">
-              <p className="text-sm text-blue-900 dark:text-blue-300">
+            <div className="mb-4 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-sm">
+              <p className="text-xs sm:text-sm text-blue-900 dark:text-blue-300 mb-1 sm:mb-2">
                 Mode: <strong>{selectedMode === "deaf" ? "Deaf User" : selectedMode === "blind" ? "Blind User" : selectedMode === "multilingual" ? "Multilingual" : "Standard"}</strong>
               </p>
-            </div>
-
-            <div className="border-2 border-gray-300 dark:border-gray-700 rounded-sm p-4 mb-4 h-96 overflow-y-auto bg-gray-50 dark:bg-gray-800">
-              {conversationHistory.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400 text-center mt-8">No messages yet. Start typing or recording to begin the conversation.</p>
-              ) : (
-                <div className="space-y-3">
-                  {conversationHistory.map((msg, index) => (
-                    <div key={index} className="p-3 bg-white dark:bg-gray-900 rounded-sm border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-start justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">You</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{msg.timestamp}</span>
-                      </div>
-                      <p className="text-gray-700 dark:text-gray-300">{msg.text}</p>
-                    </div>
-                  ))}
+              <p className="text-xs text-blue-800 dark:text-blue-300 hidden sm:block">
+                ✨ Multi-Modal Output: All messages show Text + Sign Language + Audio simultaneously
+              </p>
+              <p className="text-xs text-blue-800 dark:text-blue-300 sm:hidden">
+                ✨ Text + Sign + Audio
+              </p>
+              {selectedMode === "multilingual" && (
+                <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <label htmlFor="target-lang" className="text-xs text-blue-800 dark:text-blue-300 whitespace-nowrap">
+                    Translate to:
+                  </label>
+                  <select
+                    id="target-lang"
+                    value={targetLang}
+                    onChange={(e) => setTargetLang(e.target.value)}
+                    className="text-xs px-2 py-1 w-full sm:w-auto border border-blue-300 dark:border-blue-700 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="es">Spanish (ES)</option>
+                    <option value="fr">French (FR)</option>
+                    <option value="de">German (DE)</option>
+                    <option value="it">Italian (IT)</option>
+                    <option value="pt">Portuguese (PT)</option>
+                    <option value="zh">Chinese (ZH)</option>
+                    <option value="ja">Japanese (JA)</option>
+                    <option value="ko">Korean (KO)</option>
+                    <option value="ar">Arabic (AR)</option>
+                    <option value="ru">Russian (RU)</option>
+                  </select>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage(inputText);
-                  }
-                }}
-                placeholder="Type your message..."
-                className="flex-1 px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800"
-                aria-label="Message input"
-              />
-              <button
-                type="button"
-                onClick={() => handleSendMessage(inputText)}
-                disabled={!inputText.trim()}
-                className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Send message"
-              >
-                Send
-              </button>
-              {!isRecording ? (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
-                  aria-label="Record message"
-                >
-                  🎤 Record
-                </button>
+            <div className="border-2 border-gray-300 dark:border-gray-700 rounded-sm p-2 sm:p-4 mb-4 max-h-96 sm:max-h-[32rem] overflow-y-auto bg-gray-50 dark:bg-gray-800">
+              {conversationHistory.length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400 text-center mt-8 text-sm sm:text-base">No messages yet. Start typing or recording to begin the conversation.</p>
               ) : (
+                <div className="space-y-3 sm:space-y-4">
+                  {conversationHistory.map((msg, index) => (
+                    <div key={index} className="p-3 sm:p-4 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 space-y-2 sm:space-y-3">
+                      <div className="flex items-start justify-between mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">You</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{msg.timestamp}</span>
+                      </div>
+                      
+                      {/* Multi-Modal Output: Show ALL formats simultaneously */}
+                      <div className="space-y-2 sm:space-y-3">
+                        {/* 1. Text Output */}
+                        <div>
+                          <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base font-medium break-words">{msg.text}</p>
+                        </div>
+
+                        {/* 2. Sign Language Animation */}
+                        <div className="border border-gray-200 dark:border-gray-700 rounded-sm overflow-hidden bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                          <div id={`sign-avatar-container-${index}`} className="h-32 sm:h-48 w-full">
+                            <SignLanguageAvatar text={msg.text} speed={1} containerId={`sign-avatar-container-${index}`} />
+                          </div>
+                          <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
+                            Sign Language
+                          </div>
+                        </div>
+
+                        {/* 3. Translation (if available) */}
+                        {msg.translatedText && (
+                          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-sm p-2 sm:p-3">
+                            <div className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
+                              Translation ({msg.targetLang?.toUpperCase()}):
+                            </div>
+                            <p className="text-sm sm:text-base text-blue-900 dark:text-blue-200 break-words">{msg.translatedText}</p>
+                          </div>
+                        )}
+
+                        {/* 4. Audio indicator (speech synthesis happens automatically) */}
+                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span>🔊</span>
+                          <span className="hidden sm:inline">Audio playback active</span>
+                          <span className="sm:hidden">Audio</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {isTranslating && (
+                    <div className="text-center text-sm text-gray-500 dark:text-gray-400 py-2">
+                      Translating...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 mb-2">
+              {/* Input row */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage(inputText);
+                    }
+                  }}
+                  placeholder="Type your message..."
+                  className="flex-1 px-3 sm:px-4 py-2 text-sm sm:text-base border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800"
+                  aria-label="Message input"
+                />
                 <button
                   type="button"
-                  onClick={stopRecording}
-                  className="px-4 py-2 bg-gray-800 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
-                  aria-label="Stop recording"
+                  onClick={() => handleSendMessage(inputText)}
+                  disabled={!inputText.trim()}
+                  className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm sm:text-base font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  aria-label="Send message"
                 >
-                  ⏹️ Stop
+                  <span className="hidden sm:inline">Send</span>
+                  <span className="sm:hidden">✓</span>
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={endConversation}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
-                aria-label="End conversation"
-              >
-                End
-              </button>
+              </div>
+              {/* Action buttons row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {!isRecording ? (
+                  <button
+                    type="button"
+                    onClick={startRecording}
+                    className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm sm:text-base font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
+                    aria-label="Record message"
+                  >
+                    <span className="hidden sm:inline">🎤 Record</span>
+                    <span className="sm:hidden">🎤</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={stopRecording}
+                    className="flex-1 sm:flex-none px-3 sm:px-4 py-2 bg-gray-800 text-white text-sm sm:text-base font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
+                    aria-label="Stop recording"
+                  >
+                    <span className="hidden sm:inline">⏹️ Stop</span>
+                    <span className="sm:hidden">⏹️</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={endConversation}
+                  className="flex-1 sm:flex-none px-3 sm:px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-xs sm:text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+                  aria-label="End conversation"
+                >
+                  End
+                </button>
+              </div>
             </div>
           </div>
         )}
