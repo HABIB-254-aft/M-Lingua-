@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ChatWindow from "./ChatWindow";
+import GroupChatWindow from "./GroupChatWindow";
 
 interface FriendsDrawerProps {
   isOpen: boolean;
@@ -25,6 +26,11 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   const [friendSort, setFriendSort] = useState<'name' | 'recent' | 'status'>('name');
   const [searchFilter, setSearchFilter] = useState<'all' | 'name' | 'username' | 'email'>('all');
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [groups, setGroups] = useState<any[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<any | null>(null);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([]);
 
   // Voice navigation refs
   const voiceRecognitionRef = useRef<any | null>(null);
@@ -516,10 +522,73 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
 
       // Load unread message counts
       loadUnreadCounts();
+
+      // Load groups
+      if (currentUser?.id) {
+        const groupsData = localStorage.getItem(`mlingua_groups_${currentUser.id}`);
+        const loadedGroups = groupsData ? JSON.parse(groupsData) : [];
+        setGroups(loadedGroups);
+      }
     } catch {
       // ignore
     }
   }, [currentUser?.id, loadUnreadCounts]);
+
+  // Create new group
+  const handleCreateGroup = () => {
+    if (!currentUser?.id || !newGroupName.trim() || selectedGroupMembers.length === 0) {
+      showNotification("Group name and at least one member required", 'error');
+      return;
+    }
+
+    try {
+      // Get selected member details
+      const members = [
+        {
+          id: currentUser.id,
+          name: currentUser.displayName || currentUser.email,
+          email: currentUser.email,
+        },
+        ...selectedGroupMembers.map((memberId) => {
+          const friend = friends.find((f) => f.id === memberId);
+          return friend ? {
+            id: friend.id,
+            name: friend.name,
+            email: friend.email,
+          } : null;
+        }).filter(Boolean),
+      ];
+
+      const newGroup = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        name: newGroupName.trim(),
+        members: members,
+        createdBy: currentUser.id,
+        createdAt: new Date().toISOString(),
+      };
+
+      const updatedGroups = [...groups, newGroup];
+      setGroups(updatedGroups);
+      localStorage.setItem(`mlingua_groups_${currentUser.id}`, JSON.stringify(updatedGroups));
+
+      // Clear form
+      setNewGroupName("");
+      setSelectedGroupMembers([]);
+      setShowCreateGroup(false);
+      showNotification(`Group "${newGroup.name}" created!`, 'success');
+    } catch {
+      showNotification("Error creating group", 'error');
+    }
+  };
+
+  // Toggle member selection for group creation
+  const toggleGroupMember = (memberId: string) => {
+    setSelectedGroupMembers(prev =>
+      prev.includes(memberId)
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -914,6 +983,18 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             </button>
           </div>
 
+          {/* Create Group Button */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setShowCreateGroup(true)}
+              className="w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <span>👥</span>
+              <span>Create Group</span>
+            </button>
+          </div>
+
           {/* Search and Add Friend Section */}
           <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="relative mb-3">
@@ -1302,6 +1383,54 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             )}
           </section>
 
+          {/* Groups Section */}
+          {groups.length > 0 && (
+            <section className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  Groups
+                  <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 text-xs font-medium rounded-full">
+                    {groups.length}
+                  </span>
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {groups.map((group) => (
+                  <div
+                    key={group.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                    onClick={() => setSelectedGroup(group)}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center text-lg font-bold flex-shrink-0">
+                        👥
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                          {group.name}
+                        </h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {group.members?.length || 0} members
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedGroup(group);
+                      }}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      aria-label={`Open group chat ${group.name}`}
+                    >
+                      💬 Chat
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Sent Requests */}
           <section className="mb-6">
             <div className="flex items-center justify-between mb-3">
@@ -1478,12 +1607,165 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
         </>
       )}
 
+      {/* Create Group Modal */}
+      {showCreateGroup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Create New Group</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateGroup(false);
+                    setNewGroupName("");
+                    setSelectedGroupMembers([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Group Name
+                </label>
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Enter group name..."
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Select Members ({selectedGroupMembers.length} selected)
+                </label>
+                <div className="max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2 space-y-2">
+                  {friends.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                      No friends to add. Add friends first!
+                    </p>
+                  ) : (
+                    friends.map((friend) => (
+                      <label
+                        key={friend.id}
+                        className="flex items-center gap-3 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedGroupMembers.includes(friend.id)}
+                          onChange={() => toggleGroupMember(friend.id)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <div className="flex items-center gap-2 flex-1">
+                          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                            {friend.avatar || friend.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {friend.name}
+                          </span>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateGroup(false);
+                    setNewGroupName("");
+                    setSelectedGroupMembers([]);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateGroup}
+                  disabled={!newGroupName.trim() || selectedGroupMembers.length === 0}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Create Group
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Groups Section */}
+      {groups.length > 0 && (
+        <section className="mb-6 px-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              Groups
+              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 text-xs font-medium rounded-full">
+                {groups.length}
+              </span>
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {groups.map((group) => (
+              <div
+                key={group.id}
+                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                onClick={() => setSelectedGroup(group)}
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center text-lg font-bold flex-shrink-0">
+                    👥
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                      {group.name}
+                    </h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {group.members?.length || 0} members
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedGroup(group);
+                  }}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  aria-label={`Open group chat ${group.name}`}
+                >
+                  💬 Chat
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Chat Window */}
       {chatFriend && currentUser && (
         <ChatWindow
           isOpen={!!chatFriend}
           onClose={() => setChatFriend(null)}
           friend={chatFriend}
+          currentUser={currentUser}
+        />
+      )}
+
+      {/* Group Chat Window */}
+      {selectedGroup && currentUser && (
+        <GroupChatWindow
+          isOpen={!!selectedGroup}
+          onClose={() => setSelectedGroup(null)}
+          group={selectedGroup}
           currentUser={currentUser}
         />
       )}
