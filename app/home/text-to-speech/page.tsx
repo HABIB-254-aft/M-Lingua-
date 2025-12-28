@@ -314,11 +314,11 @@ export default function TextToSpeechPage() {
           className="w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize"
         />
 
-        <div className="flex items-center gap-8 mt-4">
-          <div className="flex items-center gap-3">
-            <label htmlFor="voice-select" className="text-sm font-medium text-gray-900 dark:text-gray-100">Voice:</label>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 sm:gap-8 mt-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
+            <label htmlFor="voice-select" className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">Voice:</label>
             {/* Custom voice dropdown to reproduce options list visuals */}
-            <div id="voice-select">
+            <div id="voice-select" className="flex-1 sm:flex-none">
               <VoiceDropdown
                 id="voice-select"
                 options={[
@@ -350,11 +350,11 @@ export default function TextToSpeechPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label htmlFor="speed-select" className="text-sm font-medium text-gray-900 dark:text-gray-100">Speed:</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <label htmlFor="speed-select" className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">Speed:</label>
             <select
               id="speed-select"
-              className="px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-sm h-10 w-36 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
+              className="px-3 sm:px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-xs sm:text-sm h-10 w-full sm:w-36 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
               aria-label="Speed selector"
               defaultValue="1"
             >

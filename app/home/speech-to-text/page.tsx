@@ -16,6 +16,8 @@ export default function SpeechToTextPage() {
   const isRecordingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileRecognitionRef = useRef<any | null>(null);
+  const processedFinalCountRef = useRef<number>(0);
+  const sessionIdRef = useRef<number>(0);
   
   // Voice navigation refs (separate from transcription recognition)
   const voiceRecognitionRef = useRef<any | null>(null);
@@ -95,39 +97,63 @@ export default function SpeechToTextPage() {
         }
       }
 
+      // Reset tracking when starting a new recording session
+      processedFinalCountRef.current = 0;
+      sessionIdRef.current = Date.now(); // Unique session ID
+      setTranscript(""); // Clear transcript for new recording
+
       const recognition = new SpeechRecognition();
       recognition.lang = "en-US";
       recognition.continuous = true;
       recognition.interimResults = true;
 
+      // Store session ID on recognition object to detect restarts
+      (recognition as any).sessionId = sessionIdRef.current;
+
       recognition.onresult = (event: any) => {
-        // Build complete transcript from ALL results (event.results contains all results from start)
-        // All final results are permanent, only the last interim result is shown (gets replaced)
-        let allFinalTranscript = "";
+        console.log('onresult fired, results length:', event.results?.length);
+        
+        if (!event.results || event.results.length === 0) {
+          console.log('No results, returning early');
+          return; // No results yet
+        }
+
+        // Check if this is a new session (recognition was restarted)
+        const currentSessionId = (recognition as any).sessionId;
+        if (currentSessionId !== sessionIdRef.current) {
+          // New session - reset everything
+          sessionIdRef.current = currentSessionId;
+          processedFinalCountRef.current = 0;
+        }
+
+        // Build transcript from ALL final results + latest interim (rebuild from scratch to prevent duplication)
+        let finalTranscript = "";
         let currentInterimTranscript = "";
 
-        // Process ALL results from the beginning to build complete transcript
+        // Build transcript from all FINAL results (these are stable and won't change)
         for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript = result[0].transcript;
-          
-          if (result.isFinal) {
-            // All final results are kept permanently
-            allFinalTranscript += transcript + " ";
+          if (result && result.isFinal && result[0]) {
+            const transcript = result[0].transcript?.trim() || "";
+            if (transcript) {
+              finalTranscript += transcript + " ";
+            }
           }
         }
 
-        // Find the last interim result (if any) - this is temporary and gets replaced
+        // Find the last interim result (if any) - this shows what's being spoken right now
         for (let i = event.results.length - 1; i >= 0; i--) {
-          if (!event.results[i].isFinal) {
-            currentInterimTranscript = event.results[i][0].transcript;
+          const result = event.results[i];
+          if (result && !result.isFinal && result[0]) {
+            currentInterimTranscript = result[0].transcript?.trim() || "";
             break;
           }
         }
 
-        // Set transcript: all final results + current interim (matching prototype behavior)
-        // This replaces the entire transcript each time, preventing duplication
-        setTranscript((allFinalTranscript.trim() + (currentInterimTranscript ? " " + currentInterimTranscript : "")).trim());
+        // Set transcript: all final results + current interim (rebuild from scratch each time)
+        // This prevents duplication because we're rebuilding, not appending
+        const fullTranscript = finalTranscript.trim() + (currentInterimTranscript ? " " + currentInterimTranscript : "");
+        setTranscript(fullTranscript.trim());
       };
 
       recognition.onerror = (event: any) => {
@@ -152,12 +178,17 @@ export default function SpeechToTextPage() {
         // If still recording, restart (matching prototype behavior)
         if (isRecordingRef.current && recognitionRef.current) {
           try {
+            // Create new session ID for the restart
+            sessionIdRef.current = Date.now();
+            (recognitionRef.current as any).sessionId = sessionIdRef.current;
+            // Don't reset processedFinalCountRef - it will be reset in onresult if needed
             recognitionRef.current.start();
           } catch {
             // If restart fails, stop recording
             isRecordingRef.current = false;
             setIsRecording(false);
             recognitionRef.current = null;
+            processedFinalCountRef.current = 0;
             setShowStoppedMessage(true);
             setTimeout(() => setShowStoppedMessage(false), 3000);
           }
@@ -165,6 +196,7 @@ export default function SpeechToTextPage() {
           isRecordingRef.current = false;
           setIsRecording(false);
           recognitionRef.current = null;
+          processedFinalCountRef.current = 0;
           setShowStoppedMessage(true);
           setTimeout(() => setShowStoppedMessage(false), 3000);
         }
@@ -174,7 +206,17 @@ export default function SpeechToTextPage() {
       isRecordingRef.current = true;
       setIsRecording(true);
       setShowStoppedMessage(false);
-      recognition.start();
+      
+      // Start recognition
+      try {
+        recognition.start();
+        console.log('Recognition started');
+      } catch (error) {
+        console.error('Error starting recognition:', error);
+        setIsRecording(false);
+        isRecordingRef.current = false;
+        recognitionRef.current = null;
+      }
     } catch (error) {
       console.error('Error starting recognition:', error);
       setIsRecording(false);
@@ -198,6 +240,7 @@ export default function SpeechToTextPage() {
     } finally {
       setIsRecording(false);
       recognitionRef.current = null;
+      processedFinalCountRef.current = 0;
       setShowStoppedMessage(true);
       setTimeout(() => setShowStoppedMessage(false), 3000);
     }

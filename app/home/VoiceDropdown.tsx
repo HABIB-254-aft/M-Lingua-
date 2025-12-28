@@ -88,7 +88,7 @@ export default function VoiceDropdown({
   const selected = options.find((o) => o.value === value) || options[0];
 
   return (
-    <div className="relative inline-block text-left">
+    <div className="relative inline-block text-left w-full sm:w-auto">
       <button
         id={id}
         type="button"
@@ -106,7 +106,7 @@ export default function VoiceDropdown({
             return next;
           });
         }}
-        className="px-4 py-2 border-2 border-gray-300 rounded-md bg-white text-sm h-10 inline-flex items-center justify-between w-[520px] text-gray-900 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:border-blue-600"
+        className="px-3 sm:px-4 py-2 border-2 border-gray-300 rounded-md bg-white text-xs sm:text-sm h-10 inline-flex items-center justify-between w-full sm:w-[520px] text-gray-900 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:border-blue-600"
       >
         <span className="truncate">{selected.label}</span>
         <svg
@@ -131,7 +131,7 @@ export default function VoiceDropdown({
           role="listbox"
           tabIndex={-1}
           ref={listRef}
-          className="absolute z-50 mt-2 w-[520px] max-h-64 overflow-auto bg-white border-2 border-gray-300 rounded-md text-sm ring-0"
+          className="absolute z-50 mt-2 w-full sm:w-[520px] max-h-64 overflow-auto bg-white border-2 border-gray-300 rounded-md text-xs sm:text-sm ring-0"
         >
           {options.map((opt, idx) => {
             const isActive = idx === activeIndex;
