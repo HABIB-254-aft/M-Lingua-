@@ -142,6 +142,27 @@ export default function ConversationModePage() {
       }
       setIsTranslating(false);
     }
+
+    // Process based on mode - ALL modes show multiple outputs simultaneously
+    // 1. ALWAYS show text (already in message)
+    
+    // 2. ALWAYS show sign language animation (for deaf users and visual learners)
+    // (Sign animation is handled by SignLanguageAvatar component in UI)
+    
+    // 3. ALWAYS speak text (for blind users)
+    if (typeof window !== "undefined") {
+      const synth = window.speechSynthesis;
+      if (synth) {
+        try {
+          synth.cancel();
+          const u = new SpeechSynthesisUtterance(trimmedText);
+          u.lang = "en-US";
+          synth.speak(u);
+        } catch {
+          // ignore
+        }
+      }
+    }
   };
 
   const startRecording = async () => {

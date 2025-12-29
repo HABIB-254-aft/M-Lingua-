@@ -427,18 +427,19 @@ export default function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps)
           <section className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Security</h3>
             <div className="space-y-3">
-              <div className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700">
+              <div className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800">
                 <span className="text-2xl">🔒</span>
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">Change Password</div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">Update your account password</div>
                 </div>
               </div>
-              <div className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700">
+              <div className="flex items-center gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800">
                 <span className="text-2xl">🔐</span>
                 <div className="flex-1">
                   <div className="font-medium text-gray-900 dark:text-gray-100">Manage Authentication</div>
                   <div className="text-sm text-gray-600 dark:text-gray-400">Manage your authentication methods</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Coming soon</div>
                 </div>
               </div>
             </div>

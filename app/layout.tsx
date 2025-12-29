@@ -4,7 +4,6 @@ import Script from "next/script";
 import "./globals.css";
 import Header from "../components/Header";
 import { ThemeProvider } from "../contexts/ThemeContext";
-import InstallPrompt from "../components/InstallPrompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -80,7 +79,6 @@ export default function RootLayout({
         <ThemeProvider>
           <Header />
           {children}
-          <InstallPrompt />
         </ThemeProvider>
         <Script
           id="service-worker-registration"

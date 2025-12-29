@@ -16,6 +16,136 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
   const currentWordRef = useRef<string>("");
   const animationStartTimeRef = useRef<number>(0);
 
+  // Phrase dictionary - common phrases that should be signed as single units
+  const getPhraseSign = (phrase: string): { type: string; color: string; emoji?: string } | null => {
+    const phraseMap: Record<string, { type: string; color: string; emoji?: string }> = {
+      // Greetings
+      "good morning": { type: "good-morning", color: "#4CAF50", emoji: "🌅" },
+      "good afternoon": { type: "good-afternoon", color: "#4CAF50", emoji: "☀️" },
+      "good evening": { type: "good-evening", color: "#4CAF50", emoji: "🌆" },
+      "good night": { type: "good-night", color: "#2196F3", emoji: "🌙" },
+      "good bye": { type: "goodbye", color: "#4CAF50", emoji: "👋" },
+      "goodbye": { type: "goodbye", color: "#4CAF50", emoji: "👋" },
+      
+      // Questions
+      "how are you": { type: "how-are-you", color: "#00BCD4", emoji: "❓" },
+      "how do you do": { type: "how-are-you", color: "#00BCD4", emoji: "❓" },
+      "what is your name": { type: "what-name", color: "#00BCD4", emoji: "❓" },
+      "what's your name": { type: "what-name", color: "#00BCD4", emoji: "❓" },
+      "where are you from": { type: "where-from", color: "#00BCD4", emoji: "📍" },
+      "where is": { type: "where-is", color: "#00BCD4", emoji: "📍" },
+      "how much": { type: "how-much", color: "#00BCD4", emoji: "❓" },
+      "how many": { type: "how-many", color: "#00BCD4", emoji: "❓" },
+      "what time": { type: "what-time", color: "#00BCD4", emoji: "⏰" },
+      "what's up": { type: "what-up", color: "#00BCD4", emoji: "❓" },
+      
+      // Politeness
+      "thank you": { type: "thank-you", color: "#FF9800", emoji: "🙏" },
+      "thanks a lot": { type: "thank-you-much", color: "#FF9800", emoji: "🙏" },
+      "thank you very much": { type: "thank-you-much", color: "#FF9800", emoji: "🙏" },
+      "you're welcome": { type: "welcome", color: "#4CAF50", emoji: "🙏" },
+      "excuse me": { type: "excuse-me", color: "#795548", emoji: "🙏" },
+      "i'm sorry": { type: "sorry", color: "#795548", emoji: "😔" },
+      "i am sorry": { type: "sorry", color: "#795548", emoji: "😔" },
+      
+      // Common phrases
+      "nice to meet you": { type: "nice-meet", color: "#4CAF50", emoji: "🤝" },
+      "pleased to meet you": { type: "nice-meet", color: "#4CAF50", emoji: "🤝" },
+      "see you later": { type: "see-later", color: "#4CAF50", emoji: "👋" },
+      "see you soon": { type: "see-soon", color: "#4CAF50", emoji: "👋" },
+      "take care": { type: "take-care", color: "#4CAF50", emoji: "🤗" },
+      "have a good day": { type: "good-day", color: "#4CAF50", emoji: "☀️" },
+      "have a nice day": { type: "good-day", color: "#4CAF50", emoji: "☀️" },
+      
+      // Actions
+      "i need help": { type: "need-help", color: "#E91E63", emoji: "🆘" },
+      "can you help": { type: "can-help", color: "#E91E63", emoji: "🆘" },
+      "please help": { type: "please-help", color: "#E91E63", emoji: "🆘" },
+      "i don't understand": { type: "dont-understand", color: "#00BCD4", emoji: "❓" },
+      "i don't know": { type: "dont-know", color: "#00BCD4", emoji: "❓" },
+      "i understand": { type: "understand", color: "#00BCD4", emoji: "💡" },
+      
+      // Time phrases
+      "right now": { type: "now", color: "#FF9800", emoji: "⏰" },
+      "later today": { type: "later-today", color: "#00BCD4", emoji: "⏰" },
+      "next week": { type: "next-week", color: "#2196F3", emoji: "📅" },
+      "last week": { type: "last-week", color: "#795548", emoji: "📅" },
+      
+      // Feelings
+      "i'm fine": { type: "fine", color: "#4CAF50", emoji: "😊" },
+      "i am fine": { type: "fine", color: "#4CAF50", emoji: "😊" },
+      "i'm good": { type: "good", color: "#4CAF50", emoji: "👍" },
+      "i am good": { type: "good", color: "#4CAF50", emoji: "👍" },
+      "i'm okay": { type: "okay", color: "#2196F3", emoji: "👌" },
+      "i am okay": { type: "okay", color: "#2196F3", emoji: "👌" },
+      
+      // Requests
+      "can i": { type: "can-i", color: "#9C27B0", emoji: "🙏" },
+      "may i": { type: "may-i", color: "#9C27B0", emoji: "🙏" },
+      "could you": { type: "could-you", color: "#9C27B0", emoji: "🙏" },
+      "would you": { type: "would-you", color: "#9C27B0", emoji: "🙏" },
+    };
+
+    // Normalize phrase (lowercase, remove extra spaces)
+    const normalized = phrase.toLowerCase().trim().replace(/\s+/g, " ");
+    
+    // Try exact match
+    if (phraseMap[normalized]) {
+      return phraseMap[normalized];
+    }
+    
+    // Try with punctuation removed
+    const noPunctuation = normalized.replace(/[.,!?;:]/g, "");
+    if (phraseMap[noPunctuation]) {
+      return phraseMap[noPunctuation];
+    }
+    
+    return null;
+  };
+
+  // Parse text into phrases and words (grammar-aware)
+  const parseTextToSignUnits = (text: string): string[] => {
+    if (!text || !text.trim()) return [];
+    
+    // Normalize text: lowercase, handle punctuation
+    let normalized = text.toLowerCase().trim();
+    
+    // Remove excessive punctuation but keep sentence structure
+    normalized = normalized.replace(/[.,!?;:]+/g, " ");
+    normalized = normalized.replace(/\s+/g, " ");
+    
+    const units: string[] = [];
+    const words = normalized.split(/\s+/).filter(w => w.length > 0);
+    
+    if (words.length === 0) return [];
+    
+    let i = 0;
+    while (i < words.length) {
+      let matched = false;
+      
+      // Try to match phrases of decreasing length (longest first)
+      for (let phraseLength = Math.min(5, words.length - i); phraseLength >= 2; phraseLength--) {
+        const phraseWords = words.slice(i, i + phraseLength);
+        const phrase = phraseWords.join(" ");
+        
+        if (getPhraseSign(phrase)) {
+          units.push(phrase);
+          i += phraseLength;
+          matched = true;
+          break;
+        }
+      }
+      
+      // If no phrase matched, add single word
+      if (!matched) {
+        units.push(words[i]);
+        i++;
+      }
+    }
+    
+    return units;
+  };
+
   // Sign vocabulary mapping
   const getSignGesture = (word: string) => {
     const signMap: Record<string, { type: string; color: string; emoji?: string }> = {
@@ -215,12 +345,13 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
     }
 
     isAnimatingRef.current = true;
-    const words = text.toLowerCase().split(/\s+/).filter((w) => w.length > 0);
-    wordsQueueRef.current = words;
-    let wordIndex = 0;
+    // Parse text into phrases and words (grammar-aware)
+    const signUnits = parseTextToSignUnits(text);
+    wordsQueueRef.current = signUnits;
+    let unitIndex = 0;
 
-    const animateWord = () => {
-      if (wordIndex >= wordsQueueRef.current.length) {
+    const animateUnit = () => {
+      if (unitIndex >= wordsQueueRef.current.length) {
         isAnimatingRef.current = false;
         const canvas = canvasRef.current;
         if (canvas) {
@@ -232,10 +363,19 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
         return;
       }
 
-      const word = wordsQueueRef.current[wordIndex];
-      currentWordRef.current = word;
-      const sign = getSignGesture(word);
-      const duration = 1500 / speed;
+      const unit = wordsQueueRef.current[unitIndex];
+      currentWordRef.current = unit;
+      
+      // Try phrase first, then fall back to word
+      let sign = getPhraseSign(unit);
+      if (!sign) {
+        sign = getSignGesture(unit);
+      }
+      
+      // Longer phrases get slightly longer duration
+      const baseDuration = 1500 / speed;
+      const isPhrase = unit.split(/\s+/).length > 1;
+      const duration = isPhrase ? baseDuration * 1.3 : baseDuration;
       animationStartTimeRef.current = Date.now();
 
       const animate = () => {
@@ -253,17 +393,19 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
         if (progress < 1) {
           animationFrameRef.current = requestAnimationFrame(animate);
         } else {
-          wordIndex++;
+          unitIndex++;
+          // Slightly longer pause between phrases vs words
+          const pauseDuration = isPhrase ? 600 / speed : 500 / speed;
           setTimeout(() => {
-            animateWord();
-          }, 500 / speed);
+            animateUnit();
+          }, pauseDuration);
         }
       };
 
       animate();
     };
 
-    animateWord();
+    animateUnit();
   };
 
   useEffect(() => {

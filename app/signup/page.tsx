@@ -249,7 +249,7 @@ export default function Signup() {
     };
   }, [startRecognition, stopRecognition, clearTypingTimer]);
 
-  function handleSubmit(e: any) {
+  async function handleSubmit(e: any) {
     e.preventDefault();
 
     // stop recognition if active
@@ -307,19 +307,19 @@ export default function Signup() {
         counter++;
       }
 
-            // Create new user
-            const user = {
-              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-              email: email,
-              displayName: displayName,
-              username: username,
-              password: password, // In production, hash this
-              birthday: birthday,
-              gender: gender,
-              createdAt: new Date().toISOString(),
-              preferences: {},
-              history: [],
-            };
+      // Create new user
+      const user = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        email: email,
+        displayName: displayName,
+        username: username,
+        password: password, // In production, hash this
+        birthday: birthday,
+        gender: gender,
+        createdAt: new Date().toISOString(),
+        preferences: {},
+        history: [],
+      };
 
       // Save user to users list
       users.push(user);

@@ -7,6 +7,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import SettingsDrawer from "./SettingsDrawer";
 import ProfileDrawer from "./ProfileDrawer";
 import FriendsDrawer from "./FriendsDrawer";
+import InstallButton from "./InstallButton";
 
 export default function Header() {
   const router = useRouter();
@@ -104,6 +105,9 @@ export default function Header() {
 
             {/* Header Controls */}
             <div className="flex items-center gap-2">
+              {/* Install Button */}
+              <InstallButton />
+
               {/* Settings Button */}
               <button
                 type="button"
