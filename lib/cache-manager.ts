@@ -81,7 +81,7 @@ export async function cleanupExpiredCache(): Promise<void> {
       const thirtyDaysAgo = Date.now() - (DEFAULT_CACHE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
       
       for (const translation of translations) {
-        if (translation.timestamp && translation.timestamp < thirtyDaysAgo) {
+        if (translation.timestamp && translation.timestamp < thirtyDaysAgo && translation.id) {
           try {
             await deleteTranslation(translation.id);
           } catch (deleteError) {
