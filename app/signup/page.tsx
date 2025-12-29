@@ -694,13 +694,27 @@ export default function Signup() {
             />
             <label htmlFor="consent" className="text-sm text-slate-700">
               I agree to the{" "}
-              <a href="#" className="text-indigo-600 hover:text-indigo-700 underline">
+              <Link
+                href="/terms"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  try { stopRecognition(); } catch (_e) {}
+                }}
+                className="text-indigo-600 hover:text-indigo-700 underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 rounded"
+              >
                 Terms and Conditions
-              </a>{" "}
+              </Link>{" "}
               and{" "}
-              <a href="#" className="text-indigo-600 hover:text-indigo-700 underline">
+              <Link
+                href="/privacy"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  try { stopRecognition(); } catch (_e) {}
+                }}
+                className="text-indigo-600 hover:text-indigo-700 underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 rounded"
+              >
                 Privacy Policy
-              </a>
+              </Link>
             </label>
           </div>
 

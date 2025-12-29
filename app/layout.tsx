@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import Header from "../components/Header";
+import OfflineIndicator from "../components/OfflineIndicator";
+import CacheInitializer from "../components/CacheInitializer";
 import { ThemeProvider } from "../contexts/ThemeContext";
 
 const geistSans = Geist({
@@ -77,6 +79,8 @@ export default function RootLayout({
           }}
         />
         <ThemeProvider>
+          <CacheInitializer />
+          <OfflineIndicator />
           <Header />
           {children}
         </ThemeProvider>
@@ -90,10 +94,36 @@ export default function RootLayout({
                   navigator.serviceWorker.register('/sw.js')
                     .then(function(registration) {
                       console.log('Service Worker registered:', registration.scope);
+                      
+                      // Check for updates periodically
+                      setInterval(function() {
+                        registration.update();
+                      }, 60000); // Check every minute
+                      
+                      // Handle service worker updates
+                      registration.addEventListener('updatefound', function() {
+                        const newWorker = registration.installing;
+                        if (newWorker) {
+                          newWorker.addEventListener('statechange', function() {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                              // New service worker available, prompt user to refresh
+                              console.log('New service worker available');
+                              // Optionally show a notification to the user
+                            }
+                          });
+                        }
+                      });
                     })
                     .catch(function(error) {
                       console.log('Service Worker registration failed:', error);
                     });
+                  
+                  // Listen for messages from service worker
+                  navigator.serviceWorker.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'SW_ACTIVATED') {
+                      console.log('Service Worker activated, version:', event.data.version);
+                    }
+                  });
                 });
               }
             `,

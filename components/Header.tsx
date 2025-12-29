@@ -69,8 +69,8 @@ export default function Header() {
     }
   }, [pathname]);
 
-  // Don't show header on welcome/login/signup pages
-  if (pathname === "/" || pathname === "/login" || pathname === "/signup") {
+  // Don't show header on welcome/login/signup/terms/privacy pages
+  if (pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname === "/terms" || pathname === "/privacy") {
     return null;
   }
 

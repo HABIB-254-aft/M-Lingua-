@@ -69,6 +69,21 @@ export default function ConversationModePage() {
   const translateText = async (text: string, sourceLang: string = "en", targetLang: string): Promise<string | null> => {
     if (sourceLang === targetLang) return null;
     
+    // Check IndexedDB cache first
+    try {
+      const { getCachedTranslation, cacheTranslation } = await import("@/lib/indexeddb");
+      const cached = await getCachedTranslation(text, sourceLang, targetLang);
+      if (cached) {
+        return cached.translatedText;
+      }
+    } catch (error) {
+      console.error("Cache lookup error:", error);
+    }
+    
+    // Check if offline
+    const isOffline = !navigator.onLine;
+    
+    // If not in cache, fetch from API
     try {
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
       const response = await fetch(url, {
@@ -76,14 +91,60 @@ export default function ConversationModePage() {
         headers: { "Accept": "application/json" },
       });
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        // If offline or request failed, queue for background sync
+        if (isOffline || !response.ok) {
+          try {
+            const { queueRequest } = await import("@/lib/sync-queue");
+            await queueRequest('translation', url, {
+              method: "GET",
+              headers: { "Accept": "application/json" },
+            });
+            console.log("Translation queued for background sync");
+          } catch (queueError) {
+            console.error("Failed to queue translation:", queueError);
+          }
+        }
+        return null;
+      }
 
       const data = await response.json();
       if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        return data.responseData.translatedText;
+        const translatedText = data.responseData.translatedText;
+        
+        // Cache the translation
+        try {
+          const { cacheTranslation } = await import("@/lib/indexeddb");
+          await cacheTranslation({
+            sourceText: text,
+            translatedText,
+            sourceLang,
+            targetLang,
+            timestamp: Date.now(),
+          });
+        } catch (cacheError) {
+          console.error("Cache save error:", cacheError);
+        }
+        
+        return translatedText;
       }
     } catch (error) {
       console.error("Translation error:", error);
+      
+      // If offline, queue for background sync
+      if (isOffline) {
+        try {
+          const { queueRequest } = await import("@/lib/sync-queue");
+          const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+          await queueRequest('translation', url, {
+            method: "GET",
+            headers: { "Accept": "application/json" },
+          });
+          console.log("Translation queued for background sync");
+        } catch (queueError) {
+          console.error("Failed to queue translation:", queueError);
+        }
+      }
     }
     return null;
   };
