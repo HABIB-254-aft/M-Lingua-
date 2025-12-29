@@ -99,6 +99,11 @@ export default function Header() {
                 className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 rounded"
                 aria-label="M-Lingua Home"
               >
+                <img
+                  src="/Logo_2.png"
+                  alt="M-Lingua logo"
+                  className="h-8 w-8 md:h-10 md:w-10"
+                />
                 <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">M-Lingua</h1>
               </Link>
             </div>

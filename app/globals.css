@@ -56,3 +56,42 @@ body {
   background: #0d1117;
   color: #c9d1d9;
 }
+
+/* Welcome Page Background Animation */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(20px) rotate(-5deg);
+  }
+}
+
+.bg-icon-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.bg-icon-float-reverse {
+  animation: float-reverse 8s ease-in-out infinite;
+}
+
+.bg-icon-delay-1 {
+  animation-delay: 0.5s;
+}
+
+.bg-icon-delay-2 {
+  animation-delay: 1s;
+}
+
+.bg-icon-delay-3 {
+  animation-delay: 1.5s;
+}

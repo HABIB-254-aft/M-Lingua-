@@ -35,6 +35,28 @@ export const metadata: Metadata = {
       { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
     ],
   },
+  openGraph: {
+    title: "M-Lingua - Universal Communication Platform",
+    description: "Universal, AI-powered communication platform for deaf, blind, and multilingual users. Speak. Sign. Hear. Understand.",
+    url: "https://m-lingua-alpha.vercel.app",
+    siteName: "M-Lingua",
+    images: [
+      {
+        url: "https://m-lingua-alpha.vercel.app/icon-512x512.png",
+        width: 512,
+        height: 512,
+        alt: "M-Lingua Logo",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "M-Lingua - Universal Communication Platform",
+    description: "Universal, AI-powered communication platform for deaf, blind, and multilingual users. Speak. Sign. Hear. Understand.",
+    images: ["https://m-lingua-alpha.vercel.app/icon-512x512.png"],
+  },
 };
 
 export function generateViewport() {

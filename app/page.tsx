@@ -358,20 +358,50 @@ export default function Home() {
 
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 px-6 py-12 flex items-center justify-center">
-      <section className="max-w-md w-full text-center">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-6 py-12 flex items-center justify-center relative overflow-hidden">
+      {/* Decorative Background Icons */}
+      <div className="absolute inset-0 pointer-events-none opacity-10 dark:opacity-5">
+        {/* Speech Bubbles - Communication */}
+        <div className="absolute top-10 left-10 text-6xl bg-icon-float">💬</div>
+        <div className="absolute top-32 right-20 text-5xl bg-icon-float-reverse bg-icon-delay-1">💬</div>
+        <div className="absolute bottom-40 left-16 text-4xl bg-icon-float bg-icon-delay-2">💬</div>
+        
+        {/* Sign Language Hands */}
+        <div className="absolute top-20 right-32 text-5xl bg-icon-float-reverse">🙏</div>
+        <div className="absolute bottom-32 right-12 text-6xl bg-icon-float bg-icon-delay-1">🙏</div>
+        <div className="absolute top-60 left-24 text-4xl bg-icon-float-reverse bg-icon-delay-3">🙏</div>
+        
+        {/* Audio/Sound Waves */}
+        <div className="absolute top-40 left-8 text-4xl bg-icon-float bg-icon-delay-2">🔊</div>
+        <div className="absolute bottom-20 right-40 text-5xl bg-icon-float-reverse bg-icon-delay-1">🔊</div>
+        <div className="absolute top-80 right-8 text-4xl bg-icon-float bg-icon-delay-3">🔊</div>
+        
+        {/* Globe/Translation */}
+        <div className="absolute top-16 left-1/4 text-5xl bg-icon-float-reverse">🌐</div>
+        <div className="absolute bottom-60 right-1/4 text-4xl bg-icon-float bg-icon-delay-2">🌐</div>
+        <div className="absolute top-1/2 left-12 text-5xl bg-icon-float-reverse bg-icon-delay-1">🌐</div>
+        
+        {/* Accessibility Icons */}
+        <div className="absolute bottom-16 left-1/3 text-4xl bg-icon-float bg-icon-delay-3">♿</div>
+        <div className="absolute top-1/3 right-16 text-5xl bg-icon-float-reverse">♿</div>
+        
+        {/* Text/Speech Icons */}
+        <div className="absolute bottom-80 left-40 text-4xl bg-icon-float-reverse bg-icon-delay-2">📝</div>
+        <div className="absolute top-1/4 right-1/3 text-5xl bg-icon-float bg-icon-delay-1">📝</div>
+      </div>
+      
+      <section className="w-full max-w-md bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg p-8 shadow-sm text-center relative z-10">
         <div className="mx-auto mb-6">
-          <div
-            role="img"
-            aria-label="M-Lingua logo"
-            className="h-20 w-20 rounded-full bg-indigo-600 text-white flex items-center justify-center text-2xl font-bold mx-auto"
-          >
-            ML
-          </div>
+          <img
+            src="/Logo_2.png"
+            alt="M-Lingua logo"
+            className="h-24 w-24 mx-auto mb-4"
+          />
         </div>
 
-        <h1 className="text-3xl font-extrabold mb-4">Welcome to M-Lingua</h1>
-        <p className="text-lg text-slate-700 mb-8">
+        <h1 className="text-3xl font-extrabold mb-4 text-blue-600 dark:text-blue-400">M-Lingua</h1>
+        <h2 className="text-xl font-semibold mb-4 text-slate-700 dark:text-slate-300">Welcome to M-Lingua</h2>
+        <p className="text-lg text-slate-700 dark:text-slate-300 mb-8">
           Would you like to enable blind mode for enhanced accessibility?
         </p>
 
@@ -379,7 +409,7 @@ export default function Home() {
           <button
             type="button"
             onClick={handleBlind}
-            className="w-full max-w-sm inline-flex items-center justify-center px-6 py-4 bg-indigo-600 text-white text-lg font-semibold rounded-md border border-indigo-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
+            className="w-full max-w-sm inline-flex items-center justify-center px-6 py-4 bg-indigo-600 text-white text-lg font-semibold rounded-md border border-indigo-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-gray-800"
             aria-label="Enable Blind Mode"
           >
             Enable Blind Mode
@@ -388,7 +418,7 @@ export default function Home() {
           <button
             type="button"
             onClick={handleStandard}
-            className="w-full max-w-sm inline-flex items-center justify-center px-6 py-4 bg-white text-indigo-700 text-lg font-semibold rounded-md border border-slate-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50"
+            className="w-full max-w-sm inline-flex items-center justify-center px-6 py-4 bg-white dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 text-lg font-semibold rounded-md border border-slate-200 dark:border-gray-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-gray-800"
             aria-label="Continue Without Blind Mode"
           >
             Continue Without Blind Mode

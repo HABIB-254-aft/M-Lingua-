@@ -535,13 +535,44 @@ export default function Login() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+    <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Decorative Background Icons */}
+      <div className="absolute inset-0 pointer-events-none opacity-5 dark:opacity-3">
+        {/* Speech Bubbles - Communication */}
+        <div className="absolute top-10 left-10 text-6xl bg-icon-float">💬</div>
+        <div className="absolute top-32 right-20 text-5xl bg-icon-float-reverse bg-icon-delay-1">💬</div>
+        <div className="absolute bottom-40 left-16 text-4xl bg-icon-float bg-icon-delay-2">💬</div>
+        
+        {/* Sign Language Hands */}
+        <div className="absolute top-20 right-32 text-5xl bg-icon-float-reverse">🙏</div>
+        <div className="absolute bottom-32 right-12 text-6xl bg-icon-float bg-icon-delay-1">🙏</div>
+        <div className="absolute top-60 left-24 text-4xl bg-icon-float-reverse bg-icon-delay-3">🙏</div>
+        
+        {/* Audio/Sound Waves */}
+        <div className="absolute top-40 left-8 text-4xl bg-icon-float bg-icon-delay-2">🔊</div>
+        <div className="absolute bottom-20 right-40 text-5xl bg-icon-float-reverse bg-icon-delay-1">🔊</div>
+        <div className="absolute top-80 right-8 text-4xl bg-icon-float bg-icon-delay-3">🔊</div>
+        
+        {/* Globe/Translation */}
+        <div className="absolute top-16 left-1/4 text-5xl bg-icon-float-reverse">🌐</div>
+        <div className="absolute bottom-60 right-1/4 text-4xl bg-icon-float bg-icon-delay-2">🌐</div>
+        <div className="absolute top-1/2 left-12 text-5xl bg-icon-float-reverse bg-icon-delay-1">🌐</div>
+        
+        {/* Accessibility Icons */}
+        <div className="absolute bottom-16 left-1/3 text-4xl bg-icon-float bg-icon-delay-3">♿</div>
+        <div className="absolute top-1/3 right-16 text-5xl bg-icon-float-reverse">♿</div>
+        
+        {/* Text/Speech Icons */}
+        <div className="absolute bottom-80 left-40 text-4xl bg-icon-float-reverse bg-icon-delay-2">📝</div>
+        <div className="absolute top-1/4 right-1/3 text-5xl bg-icon-float bg-icon-delay-1">📝</div>
+      </div>
+      
       <Script
         src="https://accounts.google.com/gsi/client"
         onLoad={() => setIsGoogleLoaded(true)}
         strategy="lazyOnload"
       />
-      <section className="w-full max-w-md bg-white border border-slate-200 rounded-lg p-8 shadow-sm">
+      <section className="w-full max-w-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-lg p-8 shadow-sm relative z-10">
         <div className="mb-4">
           <button
             type="button"
@@ -576,7 +607,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="login-heading">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
+            <label htmlFor="email" className="block text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">
               Email
             </label>
             <input
@@ -595,7 +626,7 @@ export default function Login() {
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+              <label htmlFor="password" className="block text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Password
               </label>
               <Link
@@ -692,7 +723,7 @@ export default function Login() {
         <p className="mt-4 text-sm text-slate-600">No authentication is implemented in this prototype.</p>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-slate-700 dark:text-slate-200">
             Don't have an account?{' '}
             <Link
               href="/signup"
