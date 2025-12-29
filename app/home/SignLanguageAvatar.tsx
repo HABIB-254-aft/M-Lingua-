@@ -203,7 +203,6 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
       hey: { type: "hello", color: "#4CAF50", emoji: "👋" },
       goodbye: { type: "goodbye", color: "#4CAF50", emoji: "👋" },
       bye: { type: "goodbye", color: "#4CAF50", emoji: "👋" },
-      morning: { type: "good", color: "#4CAF50" },
       afternoon: { type: "good", color: "#4CAF50" },
       evening: { type: "good", color: "#4CAF50" },
 
