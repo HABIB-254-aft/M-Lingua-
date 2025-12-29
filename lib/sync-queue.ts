@@ -65,9 +65,13 @@ export async function queueRequest(
         // Trigger background sync if available
         if ('serviceWorker' in navigator && 'sync' in ServiceWorkerRegistration.prototype) {
           navigator.serviceWorker.ready.then((registration) => {
-            registration.sync.register('sync-translations').catch((error) => {
-              console.error('[SyncQueue] Failed to register sync:', error);
-            });
+            // Background Sync API is not in standard TypeScript types, use type assertion
+            const syncManager = (registration as any).sync;
+            if (syncManager) {
+              syncManager.register('sync-translations').catch((error: any) => {
+                console.error('[SyncQueue] Failed to register sync:', error);
+              });
+            }
           });
         }
         
@@ -146,10 +150,16 @@ export async function clearQueuedRequests(): Promise<void> {
 // Retry a queued request
 export async function retryQueuedRequest(request: QueuedRequest): Promise<boolean> {
   try {
+    // Check if request has an id
+    if (!request.id) {
+      console.error('[SyncQueue] Cannot retry request without id');
+      return false;
+    }
+
     // Check if max retries reached
     if (request.retries >= MAX_RETRIES) {
       console.log(`[SyncQueue] Max retries reached for request:`, request.id);
-      await removeQueuedRequest(request.id!);
+      await removeQueuedRequest(request.id);
       return false;
     }
     
@@ -158,7 +168,7 @@ export async function retryQueuedRequest(request: QueuedRequest): Promise<boolea
     
     if (response.ok) {
       // Success - remove from queue
-      await removeQueuedRequest(request.id!);
+      await removeQueuedRequest(request.id);
       return true;
     } else {
       // Failed - increment retries
@@ -173,15 +183,17 @@ export async function retryQueuedRequest(request: QueuedRequest): Promise<boolea
   } catch (error) {
     console.error('[SyncQueue] Failed to retry request:', error);
     
-    // Increment retries
-    try {
-      const db = await openSyncDB();
-      const transaction = db.transaction([SYNC_QUEUE_STORE], 'readwrite');
-      const store = transaction.objectStore(SYNC_QUEUE_STORE);
-      const updatedRequest = { ...request, retries: request.retries + 1 };
-      store.put(updatedRequest);
-    } catch (updateError) {
-      console.error('[SyncQueue] Failed to update retry count:', updateError);
+    // Increment retries only if request has an id
+    if (request.id) {
+      try {
+        const db = await openSyncDB();
+        const transaction = db.transaction([SYNC_QUEUE_STORE], 'readwrite');
+        const store = transaction.objectStore(SYNC_QUEUE_STORE);
+        const updatedRequest = { ...request, retries: request.retries + 1 };
+        store.put(updatedRequest);
+      } catch (updateError) {
+        console.error('[SyncQueue] Failed to update retry count:', updateError);
+      }
     }
     
     return false;
