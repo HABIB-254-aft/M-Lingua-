@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function Home() {
   const router = useRouter();
@@ -195,6 +195,71 @@ export default function Home() {
     }
   }, [startRecognition, stopRecognition]);
 
+  const onKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!unlockedRef.current) return;
+    const key = e.key.toLowerCase();
+    if (key === "b") {
+      // Blind mode via keyboard
+      stopRecognition();
+      try {
+        localStorage.setItem("accessibilityMode", "blind");
+      } catch (err) {
+        // ignore
+      }
+
+      try {
+        const synth = window.speechSynthesis;
+        if (synth) {
+          try {
+            synth.cancel();
+          } catch {}
+          isSpeakingRef.current = true;
+          const u = new SpeechSynthesisUtterance("Blind mode enabled. Welcome to M-Lingua.");
+          u.lang = "en-US";
+          u.addEventListener("end", () => {
+            isSpeakingRef.current = false;
+          });
+          synth.speak(u);
+        }
+      } catch (_e) {
+        // ignore
+      }
+
+      router.push("/login");
+    } else if (key === "s") {
+      // Standard mode via keyboard - ensure speech/recognition stopped first
+      stopSpeechAndSuppressRecognition();
+      try {
+        localStorage.setItem("accessibilityMode", "standard");
+      } catch (err) {
+        // ignore
+      }
+      router.push("/login");
+    }
+  }, [router, stopRecognition, stopSpeechAndSuppressRecognition]);
+
+  const unlockAndStartVoice = useCallback(() => {
+    // If user already clicked "Continue Without Blind Mode", never start voice
+    if (suppressStartRecognitionRef.current) return;
+    
+    // If already unlocked, don't trigger again
+    if (unlockedRef.current) return;
+    
+    unlockedRef.current = true;
+
+    const instruction =
+      "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'help' or 'repeat' to hear these options again.";
+
+    // Use centralized speakInstruction helper which ensures recognition is stopped before speaking and restarts after finishing
+    speakInstruction(instruction);
+    instructionSpokenRef.current = true;
+
+    // Add persistent keydown listener for B/S shortcuts after unlocking
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", onKeyDown);
+    }
+  }, [speakInstruction, onKeyDown]);
+
   const handleVoiceCommand = useCallback((raw: string) => {
     const text = raw.trim().toLowerCase();
     if (!text) return;
@@ -262,6 +327,7 @@ export default function Home() {
   // First-interaction audio unlock and keyboard shortcuts
   const unlockedRef = useRef(false);
   const instructionSpokenRef = useRef(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Voice state refs to avoid overlap between speaking and listening
   const recognitionRef = useRef<any | null>(null);
@@ -270,6 +336,19 @@ export default function Home() {
   const recognitionRetryRef = useRef(0);
   // If true, do not automatically restart recognition (set when user interrupts voice)
   const suppressStartRecognitionRef = useRef(false);
+
+  // Detect mobile device
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const checkMobile = () => {
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        (window.innerWidth <= 768);
+      setIsMobile(isMobileDevice);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -283,70 +362,26 @@ export default function Home() {
       
       if (!isVolumeUp && !isVolumeDown) return;
       
-      // If user already clicked "Continue Without Blind Mode", never start voice
-      if (suppressStartRecognitionRef.current) return;
-      
-      // If already unlocked, don't trigger again
-      if (unlockedRef.current) return;
-      
-      unlockedRef.current = true;
-
-          const instruction =
-            "Welcome to M-Lingua. Voice guidance is enabled. Say 'enable blind mode' to continue with blind mode. Say 'disable' to continue without blind mode. Say 'help' or 'repeat' to hear these options again.";
-
-      // Use centralized speakInstruction helper which ensures recognition is stopped before speaking and restarts after finishing
-      speakInstruction(instruction);
-      instructionSpokenRef.current = true;
-
-      // Add persistent keydown listener for B/S shortcuts after unlocking
-      window.addEventListener("keydown", onKeyDown);
+      unlockAndStartVoice();
     }
 
-    function onKeyDown(e: KeyboardEvent) {
-      if (!unlockedRef.current) return;
-      const key = e.key.toLowerCase();
-      if (key === "b") {
-        // Blind mode via keyboard
+    // Only listen for volume up/down keys on desktop
+    if (!isMobile) {
+      window.addEventListener("keydown", onVolumeKeyPress);
+    }
+
+    // Auto-start voice on mobile after a short delay (if not suppressed)
+    if (isMobile && !suppressStartRecognitionRef.current && !unlockedRef.current) {
+      const timer = setTimeout(() => {
+        unlockAndStartVoice();
+      }, 1000); // 1 second delay to allow page to load
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener("keydown", onVolumeKeyPress);
+        window.removeEventListener("keydown", onKeyDown);
         stopRecognition();
-        try {
-          localStorage.setItem("accessibilityMode", "blind");
-        } catch (err) {
-          // ignore
-        }
-
-        try {
-          const synth = window.speechSynthesis;
-          if (synth) {
-            try {
-              synth.cancel();
-            } catch {}
-            isSpeakingRef.current = true;
-            const u = new SpeechSynthesisUtterance("Blind mode enabled. Welcome to M-Lingua.");
-            u.lang = "en-US";
-            u.addEventListener("end", () => {
-              isSpeakingRef.current = false;
-            });
-            synth.speak(u);
-          }
-        } catch (_e) {
-          // ignore
-        }
-
-        router.push("/login");
-      } else if (key === "s") {
-        // Standard mode via keyboard - ensure speech/recognition stopped first
-        stopSpeechAndSuppressRecognition();
-        try {
-          localStorage.setItem("accessibilityMode", "standard");
-        } catch (err) {
-          // ignore
-        }
-        router.push("/login");
-      }
+      };
     }
-
-    // Only listen for volume up/down keys
-    window.addEventListener("keydown", onVolumeKeyPress);
 
     // cleanup
     return () => {
@@ -354,7 +389,7 @@ export default function Home() {
       window.removeEventListener("keydown", onKeyDown);
       stopRecognition();
     };
-  }, [router, speakInstruction, startRecognition, stopRecognition, stopSpeechAndSuppressRecognition]);
+  }, [isMobile, unlockAndStartVoice, onKeyDown, stopRecognition]);
 
 
   return (

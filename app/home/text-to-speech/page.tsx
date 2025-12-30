@@ -7,17 +7,25 @@ import VoiceDropdown from "../VoiceDropdown";
 export default function TextToSpeechPage() {
   const router = useRouter();
   const [text, setText] = useState("");
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   
   // Voice navigation refs
   const voiceRecognitionRef = useRef<any | null>(null);
   const isVoiceListeningRef = useRef(false);
   const isVoiceSpeakingRef = useRef(false);
   const spokenRef = useRef(false);
-  const readAloudBtnRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
+    // Ensure voices are loaded (they load asynchronously)
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      const synth = window.speechSynthesis;
+      // Trigger voice loading if needed
+      if (synth.getVoices().length === 0) {
+        synth.addEventListener("voiceschanged", () => {
+          // Voices are now loaded
+        }, { once: true });
+      }
+    }
+    
     // Cleanup on unmount
     return () => {
       try {
@@ -30,66 +38,10 @@ export default function TextToSpeechPage() {
     };
   }, []);
 
-  const speak = () => {
-    if (typeof window === "undefined") return;
-    const t = (text || "").trim();
-    if (!t) return; // do nothing on empty
 
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-
-    try {
-      // Cancel any previous speech to ensure immediate start
-      try {
-        synth.cancel();
-      } catch {
-        // ignore
-      }
-
-      const u = new SpeechSynthesisUtterance(t);
-      u.lang = "en-US";
-
-      u.addEventListener("end", () => {
-        setIsSpeaking(false);
-        utteranceRef.current = null;
-      });
-
-      u.addEventListener("error", () => {
-        setIsSpeaking(false);
-        utteranceRef.current = null;
-      });
-
-      utteranceRef.current = u;
-      setIsSpeaking(true);
-      synth.speak(u);
-    } catch {
-      // fail silently
-      setIsSpeaking(false);
-      utteranceRef.current = null;
-    }
-  };
-
-  const stop = () => {
-    if (typeof window === "undefined") return;
-    try {
-      const synth = window.speechSynthesis;
-      if (synth) {
-        try {
-          synth.cancel();
-        } catch {
-          // ignore
-        }
-      }
-    } catch {
-      // ignore
-    } finally {
-      setIsSpeaking(false);
-      utteranceRef.current = null;
-    }
-  };
-
-  // selected voice (visual only for now)
+  // selected voice and speed
   const [selectedVoice, setSelectedVoice] = useState("microsoft-zira");
+  const [speed, setSpeed] = useState("1");
 
   // Voice navigation functions
   const stopVoiceRecognition = useCallback(() => {
@@ -114,15 +66,18 @@ export default function TextToSpeechPage() {
   const startVoiceRecognition = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
-      const mode = localStorage.getItem("accessibilityMode");
-      if (mode !== "blind") return;
+      if (typeof window !== "undefined" && window.localStorage) {
+        const mode = localStorage.getItem("accessibilityMode");
+        if (mode !== "blind") return;
+      } else {
+        return;
+      }
     } catch (_e) {
       return;
     }
 
     if (isVoiceSpeakingRef.current) return;
     if (isVoiceListeningRef.current) return;
-    if (isSpeaking) return; // Don't listen while speaking
 
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) return;
@@ -142,20 +97,13 @@ export default function TextToSpeechPage() {
 
           stopVoiceRecognition();
 
-          if (textCmd.includes("read") || textCmd.includes("read aloud")) {
-            if (text.trim()) {
-              readAloudBtnRef.current?.click();
-            }
-            return;
-          }
-
           if (textCmd.includes("back") || textCmd.includes("go back")) {
             router.push("/home");
             return;
           }
 
           if (textCmd.includes("help") || textCmd.includes("repeat")) {
-            const message = "Text to Speech page. Enter text and say 'read' or 'read aloud' to hear it. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
+            const message = "Text to Speech page. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
             try {
               const synth = window.speechSynthesis;
               if (synth) {
@@ -202,9 +150,11 @@ export default function TextToSpeechPage() {
         isVoiceListeningRef.current = false;
         voiceRecognitionRef.current = null;
         try {
-          const mode = localStorage.getItem("accessibilityMode");
-          if (mode === "blind" && !isVoiceSpeakingRef.current && !isSpeaking) {
-            setTimeout(() => startVoiceRecognition(), 300);
+          if (typeof window !== "undefined" && window.localStorage) {
+            const mode = localStorage.getItem("accessibilityMode");
+            if (mode === "blind" && !isVoiceSpeakingRef.current) {
+              setTimeout(() => startVoiceRecognition(), 300);
+            }
           }
         } catch (_e) {
           // ignore
@@ -222,7 +172,7 @@ export default function TextToSpeechPage() {
     } catch (_e) {
       // ignore
     }
-  }, [router, stopVoiceRecognition, text, isSpeaking]);
+  }, [router, stopVoiceRecognition]);
 
   // Voice navigation setup
   useEffect(() => {
@@ -239,25 +189,27 @@ export default function TextToSpeechPage() {
       // Then use a small timeout to ensure speech synthesis is ready
       timer = setTimeout(() => {
         try {
-          const mode = localStorage.getItem("accessibilityMode");
-          if (mode === "blind" && !spokenRef.current) {
-            spokenRef.current = true;
-            const message = "Text to Speech page. Enter text and say 'read' or 'read aloud' to hear it. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
-            try {
-              const synth = window.speechSynthesis;
-              if (synth) {
-                try { synth.cancel(); } catch (_e) {}
-                isVoiceSpeakingRef.current = true;
-                const u = new SpeechSynthesisUtterance(message);
-                u.lang = "en-US";
-                u.addEventListener("end", () => {
-                  isVoiceSpeakingRef.current = false;
-                  startVoiceRecognition();
-                });
-                synth.speak(u);
+          if (typeof window !== "undefined" && window.localStorage) {
+            const mode = localStorage.getItem("accessibilityMode");
+            if (mode === "blind" && !spokenRef.current) {
+              spokenRef.current = true;
+              const message = "Text to Speech page. Say 'back' to go back. Say 'help' or 'repeat' to hear these options again.";
+              try {
+                const synth = window.speechSynthesis;
+                if (synth) {
+                  try { synth.cancel(); } catch (_e) {}
+                  isVoiceSpeakingRef.current = true;
+                  const u = new SpeechSynthesisUtterance(message);
+                  u.lang = "en-US";
+                  u.addEventListener("end", () => {
+                    isVoiceSpeakingRef.current = false;
+                    startVoiceRecognition();
+                  });
+                  synth.speak(u);
+                }
+              } catch (_e) {
+                // fail silently
               }
-            } catch (_e) {
-              // fail silently
             }
           }
         } catch (e) {
@@ -267,7 +219,7 @@ export default function TextToSpeechPage() {
     });
 
     return () => {
-      if (frameId !== null) {
+      if (frameId !== null && typeof window !== "undefined") {
         cancelAnimationFrame(frameId);
       }
       if (timer) {
@@ -275,7 +227,7 @@ export default function TextToSpeechPage() {
       }
       stopVoiceRecognition();
       try {
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && window.speechSynthesis) {
           window.speechSynthesis.cancel();
         }
       } catch (_e) {
@@ -356,41 +308,13 @@ export default function TextToSpeechPage() {
               id="speed-select"
               className="px-3 sm:px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-xs sm:text-sm h-10 w-full sm:w-36 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
               aria-label="Speed selector"
-              defaultValue="1"
+              value={speed}
+              onChange={(e) => setSpeed(e.target.value)}
             >
               <option value="0.75">Slow</option>
               <option value="1">Normal</option>
               <option value="1.25">Fast</option>
             </select>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <button
-            ref={readAloudBtnRef}
-            type="button"
-            onClick={speak}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500"
-            aria-label="Read aloud"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-              <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
-              <path d="M19 8a4 4 0 0 1 0 8"></path>
-            </svg>
-            Read Aloud
-          </button>
-
-          <button
-            type="button"
-            onClick={stop}
-            disabled={!isSpeaking}
-            className="hidden"
-          >
-            Stop
-          </button>
-
-          <div className="mt-4 text-sm text-gray-600 dark:text-gray-400" aria-live="polite">
-            {isSpeaking ? "Playing..." : ""}
           </div>
         </div>
       </div>
