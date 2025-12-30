@@ -522,10 +522,11 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       if (firebaseUser) {
         // Load from Firestore
         const { friends: firestoreFriends, error: friendsError } = await getFriends(userId);
-        if (!friendsError && firestoreFriends.length > 0) {
+        if (!friendsError) {
+          // Always use Firestore data if no error (even if empty)
           setFriends(firestoreFriends);
         } else {
-          // Fallback to localStorage
+          // Fallback to localStorage only if there's an error
           const friendsDataStr = localStorage.getItem("mlingua_friends");
           const loadedFriends = friendsDataStr ? JSON.parse(friendsDataStr) : [];
           setFriends(loadedFriends);
@@ -973,12 +974,25 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
           return;
         }
 
-        // Update local state
-        const updatedFriends = [...friends, newFriend];
-        setFriends(updatedFriends);
+        // Reload friends list from Firestore to ensure sync
+        const { friends: updatedFriendsList, error: friendsError } = await getFriends(userId);
+        if (!friendsError && updatedFriendsList) {
+          setFriends(updatedFriendsList);
+        } else {
+          // Fallback: update local state if reload fails
+          const updatedFriends = [...friends, newFriend];
+          setFriends(updatedFriends);
+        }
         
-        const updatedRequests = friendRequests.filter((r: any) => r.id !== request.id);
-        setFriendRequests(updatedRequests);
+        // Reload friend requests from Firestore
+        const { requests: updatedRequestsList, error: requestsError } = await getFriendRequests(userId);
+        if (!requestsError && updatedRequestsList) {
+          setFriendRequests(updatedRequestsList);
+        } else {
+          // Fallback: update local state if reload fails
+          const updatedRequests = friendRequests.filter((r: any) => r.id !== request.id);
+          setFriendRequests(updatedRequests);
+        }
       } else {
         // Fallback to localStorage
         const updatedFriends = [...friends, newFriend];
