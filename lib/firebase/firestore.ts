@@ -239,6 +239,17 @@ export interface FriendRequest {
   sentAt?: Timestamp | Date;
 }
 
+// Helper function to remove undefined values (Firestore doesn't allow undefined)
+const removeUndefined = (obj: any): any => {
+  const cleaned: any = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      cleaned[key] = obj[key];
+    }
+  }
+  return cleaned;
+};
+
 // Get user's friends list
 export async function getFriends(userId: string): Promise<{ friends: Friend[]; error: string | null }> {
   try {
@@ -314,17 +325,6 @@ export async function getFriendRequests(userId: string): Promise<{ requests: Fri
     return { requests: [], error: error.message };
   }
 }
-
-// Helper function to remove undefined values (Firestore doesn't allow undefined)
-const removeUndefined = (obj: any): any => {
-  const cleaned: any = {};
-  for (const key in obj) {
-    if (obj[key] !== undefined) {
-      cleaned[key] = obj[key];
-    }
-  }
-  return cleaned;
-};
 
 // Send friend request
 export async function sendFriendRequest(userId: string, receiverId: string, request: FriendRequest) {
