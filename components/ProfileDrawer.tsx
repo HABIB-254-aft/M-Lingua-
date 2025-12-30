@@ -230,7 +230,7 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
               email: firebaseUser.email,
               displayName: profile.displayName || firebaseUser.displayName || "",
               username: profile.username || firebaseUser.email?.split("@")[0] || "",
-              photoURL: profile.photoURL || firebaseUser.photoURL || null,
+              photoURL: profile.photoURL || firebaseUser.photoURL || undefined,
             };
             setUser(userData);
             setEditForm({
@@ -462,7 +462,7 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
       if (firebaseUser) {
         // Update profile in Firestore
         const { success, error } = await saveUserProfile(firebaseUser.uid, {
-          photoURL: null,
+          photoURL: undefined,
         });
 
         if (!success) {
@@ -474,7 +474,7 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
       // Update local state
       const updatedUser = {
         ...user,
-        photoURL: null,
+        photoURL: undefined,
       };
       setUser(updatedUser);
       
