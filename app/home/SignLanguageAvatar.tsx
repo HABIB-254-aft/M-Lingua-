@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { syncSignDictionaryToIndexedDB, loadSignDictionaryFromIndexedDB, hasSignDictionaryInIndexedDB } from "@/lib/sign-dictionary-sync";
 import { initDatabase } from "@/lib/indexeddb";
+import { parseTextToSignSequence } from "@/lib/sentence-parser";
 
 interface SignLanguageAvatarProps {
   text: string;
@@ -15,6 +16,8 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
   const animationFrameRef = useRef<number | null>(null);
   const isAnimatingRef = useRef(false);
   const wordsQueueRef = useRef<string[]>([]);
+  const transitionsRef = useRef<number[]>([]);
+  const emphasisRef = useRef<boolean[]>([]);
   const currentWordRef = useRef<string>("");
   const animationStartTimeRef = useRef<number>(0);
   const signMapRef = useRef<Record<string, { type: string; color: string; emoji?: string }> | null>(null);
@@ -144,47 +147,19 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
     return null;
   };
 
-  // Parse text into phrases and words (grammar-aware)
+  // Parse text into grammar-aware sign sequences
+  // This function is now a wrapper that uses the advanced sentence parser
   const parseTextToSignUnits = (text: string): string[] => {
     if (!text || !text.trim()) return [];
     
-    // Normalize text: lowercase, handle punctuation
-    let normalized = text.toLowerCase().trim();
+    // Use the grammar-aware sentence parser
+    const signSequence = parseTextToSignSequence(text);
     
-    // Remove excessive punctuation but keep sentence structure
-    normalized = normalized.replace(/[.,!?;:]+/g, " ");
-    normalized = normalized.replace(/\s+/g, " ");
+    // Store transitions and emphasis for use in animation
+    transitionsRef.current = signSequence.transitions;
+    emphasisRef.current = signSequence.emphasis;
     
-    const units: string[] = [];
-    const words = normalized.split(/\s+/).filter(w => w.length > 0);
-    
-    if (words.length === 0) return [];
-    
-    let i = 0;
-    while (i < words.length) {
-      let matched = false;
-      
-      // Try to match phrases of decreasing length (longest first)
-      for (let phraseLength = Math.min(5, words.length - i); phraseLength >= 2; phraseLength--) {
-        const phraseWords = words.slice(i, i + phraseLength);
-        const phrase = phraseWords.join(" ");
-        
-        if (getPhraseSign(phrase)) {
-          units.push(phrase);
-          i += phraseLength;
-          matched = true;
-          break;
-        }
-      }
-      
-      // If no phrase matched, add single word
-      if (!matched) {
-        units.push(words[i]);
-        i++;
-      }
-    }
-    
-    return units;
+    return signSequence.units;
   };
 
   // Sign vocabulary mapping
@@ -906,7 +881,8 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
     width: number,
     height: number,
     sign: { type: string; color: string; emoji?: string },
-    progress: number
+    progress: number,
+    intensity: number = 1.0
   ) => {
     ctx.clearRect(0, 0, width, height);
 
@@ -918,26 +894,43 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
     ctx.translate(centerX, centerY);
     ctx.scale(scale, scale);
 
+    // Apply intensity for emphasis (larger, more prominent)
+    const sizeMultiplier = 0.5 + progress * 0.5;
+    const emphasizedSize = sizeMultiplier * intensity;
+    
     // Draw sign based on type
     if (sign.emoji) {
-      // Draw emoji representation
-      ctx.font = `${80 * (0.5 + progress * 0.5)}px Arial`;
+      // Draw emoji representation with emphasis
+      ctx.font = `${80 * emphasizedSize}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      // Add slight glow effect for emphasized signs
+      if (intensity > 1.0) {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = sign.color;
+      }
       ctx.fillText(sign.emoji, 0, 0);
+      ctx.shadowBlur = 0;
     } else {
-      // Draw animated circle for unknown signs
-      const radius = 30 + progress * 20;
+      // Draw animated circle for unknown signs with emphasis
+      const radius = (30 + progress * 20) * intensity;
       ctx.beginPath();
       ctx.arc(0, 0, radius, 0, Math.PI * 2);
       ctx.fillStyle = sign.color;
-      ctx.globalAlpha = 0.7;
+      ctx.globalAlpha = intensity > 1.0 ? 0.9 : 0.7;
+      // Add glow for emphasized signs
+      if (intensity > 1.0) {
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = sign.color;
+      }
       ctx.fill();
       ctx.globalAlpha = 1.0;
+      ctx.shadowBlur = 0;
     }
 
-    // Draw word text below
-    ctx.font = "bold 16px Arial";
+    // Draw word text below with emphasis
+    const fontSize = intensity > 1.0 ? 18 : 16;
+    ctx.font = `bold ${fontSize}px Arial`;
     ctx.fillStyle = sign.color;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -993,10 +986,20 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
         sign = getSignGesture(unit);
       }
       
-      // Longer phrases get slightly longer duration
+      // Calculate duration based on unit type and emphasis
       const baseDuration = 1500 / speed;
       const isPhrase = unit.split(/\s+/).length > 1;
-      const duration = isPhrase ? baseDuration * 1.3 : baseDuration;
+      const isEmphasized = emphasisRef.current[unitIndex] || false;
+      
+      // Longer duration for phrases and emphasized words
+      let duration = baseDuration;
+      if (isPhrase) {
+        duration = baseDuration * 1.3;
+      }
+      if (isEmphasized) {
+        duration = duration * 1.2; // Add 20% for emphasis
+      }
+      
       animationStartTimeRef.current = Date.now();
 
       const animate = () => {
@@ -1007,7 +1010,9 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
         if (canvas) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            drawSignAnimation(ctx, canvas.width, canvas.height, sign, progress);
+            // Use emphasis to adjust animation intensity
+            const intensity = isEmphasized ? 1.2 : 1.0;
+            drawSignAnimation(ctx, canvas.width, canvas.height, sign, progress, intensity);
           }
         }
 
@@ -1015,8 +1020,9 @@ export default function SignLanguageAvatar({ text, speed = 1, containerId = "sig
           animationFrameRef.current = requestAnimationFrame(animate);
         } else {
           unitIndex++;
-          // Slightly longer pause between phrases vs words
-          const pauseDuration = isPhrase ? 600 / speed : 500 / speed;
+          // Use grammar-aware transition durations
+          const transitionDuration = transitionsRef.current[unitIndex - 1] || (isPhrase ? 600 : 500);
+          const pauseDuration = transitionDuration / speed;
           setTimeout(() => {
             animateUnit();
           }, pauseDuration);

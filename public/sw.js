@@ -1,7 +1,7 @@
 // M-Lingua Enhanced Service Worker
 // Handles offline caching, background sync, and PWA functionality
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.0.1';
 const CACHE_NAME = `m-lingua-v${APP_VERSION}`;
 const RUNTIME_CACHE = `m-lingua-runtime-v${APP_VERSION}`;
 const STATIC_CACHE = `m-lingua-static-v${APP_VERSION}`;

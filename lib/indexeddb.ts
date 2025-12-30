@@ -80,23 +80,42 @@ export interface SignDictionaryEntry {
   lastUpdated: number;
 }
 
+// Queue for write operations to prevent concurrent writes
+let writeQueue: Promise<void> = Promise.resolve();
+let isWriting = false;
+
 export async function storeSignDictionary(entries: SignDictionaryEntry[]): Promise<void> {
-  const db = await getDatabase();
-  const transaction = db.transaction([STORES.SIGN_DICTIONARY], 'readwrite');
-  const store = transaction.objectStore(STORES.SIGN_DICTIONARY);
+  // Queue the write operation to prevent concurrent writes
+  writeQueue = writeQueue.then(async () => {
+    // Wait if another write is in progress
+    while (isWriting) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    isWriting = true;
+    try {
+      const db = await getDatabase();
+      const transaction = db.transaction([STORES.SIGN_DICTIONARY], 'readwrite');
+      const store = transaction.objectStore(STORES.SIGN_DICTIONARY);
 
-  const promises = entries.map((entry) => {
-    return new Promise<void>((resolve, reject) => {
-      const request = store.put({
-        ...entry,
-        lastUpdated: Date.now(),
+      const promises = entries.map((entry) => {
+        return new Promise<void>((resolve, reject) => {
+          const request = store.put({
+            ...entry,
+            lastUpdated: Date.now(),
+          });
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
       });
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  });
 
-  await Promise.all(promises);
+      await Promise.all(promises);
+    } finally {
+      isWriting = false;
+    }
+  });
+  
+  return writeQueue;
 }
 
 export async function getSignDictionaryEntry(word: string): Promise<SignDictionaryEntry | null> {
@@ -134,18 +153,33 @@ export interface TranslationCacheEntry {
 }
 
 export async function cacheTranslation(entry: TranslationCacheEntry): Promise<void> {
-  const db = await getDatabase();
-  const transaction = db.transaction([STORES.TRANSLATIONS], 'readwrite');
-  const store = transaction.objectStore(STORES.TRANSLATIONS);
+  // Queue the write operation to prevent concurrent writes
+  writeQueue = writeQueue.then(async () => {
+    // Wait if another write is in progress
+    while (isWriting) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    isWriting = true;
+    try {
+      const db = await getDatabase();
+      const transaction = db.transaction([STORES.TRANSLATIONS], 'readwrite');
+      const store = transaction.objectStore(STORES.TRANSLATIONS);
 
-  return new Promise((resolve, reject) => {
-    const request = store.add({
-      ...entry,
-      timestamp: Date.now(),
-    });
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      return new Promise<void>((resolve, reject) => {
+        const request = store.add({
+          ...entry,
+          timestamp: Date.now(),
+        });
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      isWriting = false;
+    }
   });
+  
+  return writeQueue;
 }
 
 export async function getCachedTranslation(
