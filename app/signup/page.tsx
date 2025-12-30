@@ -4,11 +4,12 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
+import { signUp, signInWithGoogle } from "@/lib/firebase/auth";
+import { getUserProfile, saveUserProfile } from "@/lib/firebase/firestore";
 
 export default function Signup() {
   const spokeRef = useRef(false);
   const router = useRouter();
-  const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [currentMode, setCurrentMode] = useState<string>("standard");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -285,48 +286,61 @@ export default function Signup() {
     }
 
     try {
-      // Get users from localStorage
-      const usersStr = localStorage.getItem("mlingua_users");
-      const users = usersStr ? JSON.parse(usersStr) : [];
+      // Create user with Firebase Auth
+      const { user, error } = await signUp(email, password, fullName);
 
-      // Check if user already exists
-      if (users.find((u: any) => u.email === email)) {
-        alert("An account with this email already exists");
+      if (error) {
+        // Handle specific Firebase errors
+        if (error.includes("email-already-in-use")) {
+          alert("An account with this email already exists");
+        } else if (error.includes("weak-password")) {
+          alert("Password is too weak. Please use a stronger password.");
+        } else if (error.includes("invalid-email")) {
+          alert("Invalid email address. Please check your email.");
+        } else {
+          alert(`Sign up failed: ${error}`);
+        }
         return;
       }
 
-      // Use provided full name
-      const displayName = fullName;
-      const firstName = fullName.split(" ")[0];
+      if (!user) {
+        alert("Sign up failed. Please try again.");
+        return;
+      }
 
       // Generate unique username
+      const firstName = fullName.split(" ")[0];
       let username = firstName.toLowerCase();
       let counter = 1;
-      while (users.find((u: any) => u.username === username)) {
+      
+      // Check if username exists (we'll improve this later with Firestore queries)
+      // For now, just use a simple approach
+      const existingProfile = await getUserProfile(user.uid);
+      if (existingProfile?.username === username) {
         username = `${firstName.toLowerCase()}${counter}`;
         counter++;
       }
 
-      // Create new user
-      const user = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      // Save user profile to Firestore
+      await saveUserProfile(user.uid, {
+        uid: user.uid,
         email: email,
-        displayName: displayName,
+        displayName: fullName,
         username: username,
-        password: password, // In production, hash this
         birthday: birthday,
         gender: gender,
-        createdAt: new Date().toISOString(),
         preferences: {},
-        history: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Save auth state to localStorage for backward compatibility
+      const userForSession = {
+        id: user.uid,
+        email: user.email,
+        displayName: fullName,
+        username: username,
       };
-
-      // Save user to users list
-      users.push(user);
-      localStorage.setItem("mlingua_users", JSON.stringify(users));
-
-      // Auto-login: save current user (without password)
-      const { password: _, ...userForSession } = user;
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 
       // Read accessibility mode and optionally announce a success message for blind users.
@@ -373,120 +387,98 @@ export default function Signup() {
   }
 
   const handleGoogleSignUp = async () => {
-    if (typeof window === "undefined" || !(window as any).google) {
-      alert("Google Sign-In is not available. Please refresh the page.");
-      return;
-    }
-
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId || clientId === "") {
-      alert(
-        "Google Sign-In is not configured. Please add NEXT_PUBLIC_GOOGLE_CLIENT_ID to your .env.local file.\n\n" +
-        "To set up Google Sign-In:\n" +
-        "1. Go to https://console.cloud.google.com/\n" +
-        "2. Create a project and enable Google+ API\n" +
-        "3. Create OAuth 2.0 credentials\n" +
-        "4. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id to .env.local"
-      );
-      return;
-    }
-
     try {
-      const google = (window as any).google;
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "email profile",
-        callback: async (response: any) => {
-          if (!response.access_token) {
-            alert("Google Sign-Up was cancelled or failed.");
-            return;
+      // Sign in/up with Firebase Google Auth
+      const { user, error } = await signInWithGoogle();
+
+      if (error) {
+        console.error("Google sign-up error:", error);
+        
+        if (error.includes("popup-closed-by-user") || error.includes("cancelled")) {
+          // User closed the popup, don't show error
+          return;
+        }
+        
+        // Show more detailed error message
+        if (error.includes("auth/operation-not-allowed")) {
+          alert("Google Sign-In is not enabled. Please enable it in Firebase Console > Authentication > Sign-in method > Google");
+        } else if (error.includes("auth/popup-blocked")) {
+          alert("Popup was blocked by your browser. Please allow popups for this site and try again.");
+        } else if (error.includes("auth/network-request-failed")) {
+          alert("Network error. Please check your internet connection and try again.");
+        } else {
+          alert(`Google sign-up failed: ${error}`);
+        }
+        return;
+      }
+
+      if (!user) {
+        console.error("No user returned from Google sign-in");
+        alert("Google sign-up failed. Please try again.");
+        return;
+      }
+
+      // Get or create user profile in Firestore
+      let profile = await getUserProfile(user.uid);
+      
+      if (!profile) {
+        // Create profile for new user
+        const firstName = user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "user";
+        let username = firstName.toLowerCase();
+        
+        // Save user profile to Firestore
+        await saveUserProfile(user.uid, {
+          uid: user.uid,
+          email: user.email || "",
+          displayName: user.displayName || firstName,
+          username: username,
+          photoURL: user.photoURL || undefined,
+          preferences: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        
+        profile = await getUserProfile(user.uid);
+      } else {
+        // Update profile with latest Google info
+        await saveUserProfile(user.uid, {
+          photoURL: user.photoURL || profile.photoURL,
+          displayName: user.displayName || profile.displayName,
+        });
+      }
+
+      // Get the final profile for session
+      const finalProfile = await getUserProfile(user.uid);
+
+      // Save auth state to localStorage for backward compatibility
+      const userForSession = {
+        id: user.uid,
+        email: user.email,
+        displayName: finalProfile?.displayName || user.displayName || user.email?.split("@")[0] || "user",
+        username: finalProfile?.username || user.email?.split("@")[0] || "user",
+      };
+      localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
+
+      // Announce success for blind mode
+      try {
+        const mode = localStorage.getItem("accessibilityMode");
+        if (mode === "blind") {
+          const synth = window.speechSynthesis;
+          if (synth) {
+            const u = new SpeechSynthesisUtterance("Sign up successful.");
+            u.lang = "en-US";
+            synth.speak(u);
           }
+        }
+      } catch (_e) {
+        // ignore
+      }
 
-          try {
-            // Get user info from Google
-            const userInfoResponse = await fetch(
-              `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`
-            );
-            const userInfo = await userInfoResponse.json();
-
-            if (!userInfo.email) {
-              alert("Unable to get email from Google account.");
-              return;
-            }
-
-            const email = userInfo.email.toLowerCase();
-            const displayName = userInfo.name || userInfo.email.split("@")[0];
-            const photoURL = userInfo.picture || null;
-            const firstName = displayName.split(" ")[0];
-
-            // Get users from localStorage
-            const usersStr = localStorage.getItem("mlingua_users");
-            const users = usersStr ? JSON.parse(usersStr) : [];
-
-            // Check if user already exists
-            if (users.find((u: any) => u.email === email)) {
-              alert("An account with this email already exists. Please sign in instead.");
-              router.push("/login");
-              return;
-            }
-
-            // Generate unique username
-            let username = firstName.toLowerCase();
-            let counter = 1;
-            while (users.find((u: any) => u.username === username)) {
-              username = `${firstName.toLowerCase()}${counter}`;
-              counter++;
-            }
-
-            // Create new user
-            const user = {
-              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-              email: email,
-              displayName: displayName,
-              username: username,
-              photoURL: photoURL,
-              createdAt: new Date().toISOString(),
-              preferences: {},
-              history: [],
-              googleId: userInfo.id,
-            };
-
-            // Save user to users list
-            users.push(user);
-            localStorage.setItem("mlingua_users", JSON.stringify(users));
-
-            // Auto-login: save current user
-            const userForSession = { ...user };
-            localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
-
-            // Announce success for blind mode
-            try {
-              const mode = localStorage.getItem("accessibilityMode");
-              if (mode === "blind") {
-                const synth = window.speechSynthesis;
-                if (synth) {
-                  const u = new SpeechSynthesisUtterance("Sign up successful.");
-                  u.lang = "en-US";
-                  synth.speak(u);
-                }
-              }
-            } catch (_e) {
-              // ignore
-            }
-
-            // Redirect to home
-            router.push("/home");
-          } catch (error) {
-            console.error("Google Sign-Up error:", error);
-            alert("Error signing up with Google. Please try again.");
-          }
-        },
-      });
-
-      client.requestAccessToken();
+      // Redirect to home
+      router.push("/home");
     } catch (error) {
-      console.error("Google Sign-Up setup error:", error);
-      alert("Error setting up Google Sign-Up. Please try again.");
+      console.error("Google Sign-Up error:", error);
+      alert("Error signing up with Google. Please try again.");
     }
   };
 
@@ -523,11 +515,6 @@ export default function Signup() {
         <div className="absolute top-1/4 right-1/3 text-5xl bg-icon-float bg-icon-delay-1">📝</div>
       </div>
       
-      <Script
-        src="https://accounts.google.com/gsi/client"
-        onLoad={() => setIsGoogleLoaded(true)}
-        strategy="lazyOnload"
-      />
       <section className="w-full max-w-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-lg p-8 shadow-sm relative z-10">
         <div className="mb-4">
           <button
@@ -773,9 +760,7 @@ export default function Signup() {
           <button
             type="button"
             onClick={handleGoogleSignUp}
-            disabled={!isGoogleLoaded || !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}
-            className="mt-4 w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? "Google Sign-In not configured. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID to .env.local" : ""}
+            className="mt-4 w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path

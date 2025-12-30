@@ -4,12 +4,13 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
+import { signIn, signInWithGoogle } from "@/lib/firebase/auth";
+import { getUserProfile, saveUserProfile } from "@/lib/firebase/firestore";
 
 export default function Login() {
   const router = useRouter();
   const spokenRef = useRef(false);
   const [currentMode, setCurrentMode] = useState<string>("standard");
-  const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   // Focusable element refs
@@ -322,7 +323,7 @@ export default function Login() {
     };
   }, [startRecognition, stopRecognition, clearTypingTimer]);
 
-  function handleSubmit(e: any) {
+  async function handleSubmit(e: any) {
     e.preventDefault();
     // stop any recognition when submitting via keyboard/mouse
     try {
@@ -341,28 +342,54 @@ export default function Login() {
     }
 
     try {
-      // Get users from localStorage
-      const usersStr = localStorage.getItem("mlingua_users");
-      const users = usersStr ? JSON.parse(usersStr) : [];
-      
-      // Find user by email
-      const user = users.find((u: any) => u.email === email);
-      
+      // Sign in with Firebase
+      const { user, error } = await signIn(email, password);
+
+      if (error) {
+        // Handle specific Firebase errors
+        if (error.includes("user-not-found") || error.includes("wrong-password")) {
+          alert("Invalid email or password");
+        } else if (error.includes("too-many-requests")) {
+          alert("Too many failed attempts. Please try again later.");
+        } else {
+          alert(`Sign in failed: ${error}`);
+        }
+        return;
+      }
+
       if (!user) {
-        alert("Invalid email or password");
+        alert("Sign in failed. Please try again.");
         return;
       }
 
-      // For prototype: simple password check (in production, use hashed passwords)
-      if (user.password !== password) {
-        alert("Invalid email or password");
-        return;
+      // Get or create user profile in Firestore
+      let profile = await getUserProfile(user.uid);
+      
+      if (!profile) {
+        // Create basic profile if it doesn't exist
+        const firstName = user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "user";
+        const username = firstName.toLowerCase();
+        
+        await saveUserProfile(user.uid, {
+          uid: user.uid,
+          email: user.email || email,
+          displayName: user.displayName || firstName,
+          username: username,
+          photoURL: user.photoURL || undefined,
+          preferences: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
       }
 
-      // Save current user to localStorage (without password)
-      const userForSession = { ...user };
-      delete userForSession.password;
-      delete userForSession.passwordHash;
+      // Save auth state to localStorage for backward compatibility
+      const userForSession = {
+        id: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        username: profile?.username || user.email?.split("@")[0],
+        photoURL: user.photoURL,
+      };
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 
       const synth = (window as any).speechSynthesis;
@@ -405,132 +432,92 @@ export default function Login() {
   }
 
   const handleGoogleSignIn = async () => {
-    if (typeof window === "undefined" || !(window as any).google) {
-      alert("Google Sign-In is not available. Please refresh the page.");
-      return;
-    }
-
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId || clientId === "") {
-      alert(
-        "Google Sign-In is not configured. Please add NEXT_PUBLIC_GOOGLE_CLIENT_ID to your .env.local file.\n\n" +
-        "To set up Google Sign-In:\n" +
-        "1. Go to https://console.cloud.google.com/\n" +
-        "2. Create a project and enable Google+ API\n" +
-        "3. Create OAuth 2.0 credentials\n" +
-        "4. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id to .env.local"
-      );
-      return;
-    }
-
     try {
-      const google = (window as any).google;
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: "email profile",
-        callback: async (response: any) => {
-          if (!response.access_token) {
-            alert("Google Sign-In was cancelled or failed.");
-            return;
+      // Sign in with Firebase Google Auth
+      const { user, error } = await signInWithGoogle();
+
+      if (error) {
+        console.error("Google sign-in error:", error);
+        
+        if (error.includes("popup-closed-by-user") || error.includes("cancelled")) {
+          // User closed the popup, don't show error
+          return;
+        }
+        
+        // Show more detailed error message
+        if (error.includes("auth/operation-not-allowed")) {
+          alert("Google Sign-In is not enabled. Please enable it in Firebase Console > Authentication > Sign-in method > Google");
+        } else if (error.includes("auth/popup-blocked")) {
+          alert("Popup was blocked by your browser. Please allow popups for this site and try again.");
+        } else if (error.includes("auth/network-request-failed")) {
+          alert("Network error. Please check your internet connection and try again.");
+        } else {
+          alert(`Google sign-in failed: ${error}`);
+        }
+        return;
+      }
+
+      if (!user) {
+        alert("Google sign-in failed. Please try again.");
+        return;
+      }
+
+      // Get or create user profile in Firestore
+      let profile = await getUserProfile(user.uid);
+      
+      if (!profile) {
+        // Create profile for new user
+        const firstName = user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "user";
+        const username = firstName.toLowerCase();
+        
+        await saveUserProfile(user.uid, {
+          uid: user.uid,
+          email: user.email || "",
+          displayName: user.displayName || firstName,
+          username: username,
+          photoURL: user.photoURL || undefined,
+          preferences: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      } else {
+        // Update profile with latest Google info
+        await saveUserProfile(user.uid, {
+          photoURL: user.photoURL || profile.photoURL,
+          displayName: user.displayName || profile.displayName,
+        });
+      }
+
+      // Save auth state to localStorage for backward compatibility
+      const userForSession = {
+        id: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        username: profile?.username || user.email?.split("@")[0],
+        photoURL: user.photoURL,
+      };
+      localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
+
+      // Announce success for blind mode
+      try {
+        const mode = localStorage.getItem("accessibilityMode");
+        if (mode === "blind") {
+          const synth = window.speechSynthesis;
+          if (synth) {
+            const u = new SpeechSynthesisUtterance("Sign in successful.");
+            u.lang = "en-US";
+            synth.speak(u);
           }
+        }
+      } catch (_e) {
+        // ignore
+      }
 
-          try {
-            // Get user info from Google
-            const userInfoResponse = await fetch(
-              `https://www.googleapis.com/oauth2/v2/userinfo?access_token=${response.access_token}`
-            );
-            const userInfo = await userInfoResponse.json();
-
-            if (!userInfo.email) {
-              alert("Unable to get email from Google account.");
-              return;
-            }
-
-            const email = userInfo.email.toLowerCase();
-            const displayName = userInfo.name || userInfo.email.split("@")[0];
-            const photoURL = userInfo.picture || null;
-            const firstName = displayName.split(" ")[0];
-
-            // Get users from localStorage
-            const usersStr = localStorage.getItem("mlingua_users");
-            const users = usersStr ? JSON.parse(usersStr) : [];
-
-            // Check if user exists
-            let user = users.find((u: any) => u.email === email);
-
-            if (!user) {
-              // Create new user
-              let username = firstName.toLowerCase();
-              let counter = 1;
-              while (users.find((u: any) => u.username === username)) {
-                username = `${firstName.toLowerCase()}${counter}`;
-                counter++;
-              }
-
-              user = {
-                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                email: email,
-                displayName: displayName,
-                username: username,
-                photoURL: photoURL,
-                createdAt: new Date().toISOString(),
-                preferences: {},
-                history: [],
-                googleId: userInfo.id,
-              };
-
-              users.push(user);
-              localStorage.setItem("mlingua_users", JSON.stringify(users));
-            } else {
-              // Update existing user with Google info if needed
-              if (photoURL && !user.photoURL) {
-                user.photoURL = photoURL;
-              }
-              if (displayName && !user.displayName) {
-                user.displayName = displayName;
-              }
-              user.googleId = userInfo.id;
-              const userIndex = users.findIndex((u: any) => u.id === user.id);
-              if (userIndex !== -1) {
-                users[userIndex] = user;
-                localStorage.setItem("mlingua_users", JSON.stringify(users));
-              }
-            }
-
-            // Save current user (without password)
-            const userForSession = { ...user };
-            delete userForSession.password;
-            delete userForSession.passwordHash;
-            localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
-
-            // Announce success for blind mode
-            try {
-              const mode = localStorage.getItem("accessibilityMode");
-              if (mode === "blind") {
-                const synth = window.speechSynthesis;
-                if (synth) {
-                  const u = new SpeechSynthesisUtterance("Sign in successful.");
-                  u.lang = "en-US";
-                  synth.speak(u);
-                }
-              }
-            } catch (_e) {
-              // ignore
-            }
-
-            // Navigate to home
-            router.push("/home");
-          } catch (error) {
-            console.error("Google Sign-In error:", error);
-            alert("Error signing in with Google. Please try again.");
-          }
-        },
-      });
-
-      client.requestAccessToken();
+      // Navigate to home
+      router.push("/home");
     } catch (error) {
-      console.error("Google Sign-In setup error:", error);
-      alert("Error setting up Google Sign-In. Please try again.");
+      console.error("Google Sign-In error:", error);
+      alert("Error signing in with Google. Please try again.");
     }
   };
 
@@ -567,11 +554,6 @@ export default function Login() {
         <div className="absolute top-1/4 right-1/3 text-5xl bg-icon-float bg-icon-delay-1">📝</div>
       </div>
       
-      <Script
-        src="https://accounts.google.com/gsi/client"
-        onLoad={() => setIsGoogleLoaded(true)}
-        strategy="lazyOnload"
-      />
       <section className="w-full max-w-md bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border border-slate-200 dark:border-gray-700 rounded-lg p-8 shadow-sm relative z-10">
         <div className="mb-4">
           <button
@@ -694,9 +676,7 @@ export default function Login() {
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            disabled={!isGoogleLoaded || !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}
-            className="mt-4 w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? "Google Sign-In not configured. Add NEXT_PUBLIC_GOOGLE_CLIENT_ID to .env.local" : ""}
+            className="mt-4 w-full inline-flex items-center justify-center gap-3 px-4 py-3 bg-white border-2 border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -720,7 +700,6 @@ export default function Login() {
           </button>
         </div>
 
-        <p className="mt-4 text-sm text-slate-600">No authentication is implemented in this prototype.</p>
 
         <div className="mt-6 text-center">
           <p className="text-sm text-slate-700 dark:text-slate-200">

@@ -3,19 +3,38 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { resetPassword } from "@/lib/firebase/auth";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // In a real application, this would send a password reset email
-    // For now, we'll just show a success message
-    if (email) {
+    if (!email) {
+      alert("Please enter your email address");
+      return;
+    }
+
+    try {
+      const { error } = await resetPassword(email);
+      
+      if (error) {
+        if (error.includes("user-not-found")) {
+          alert("No account found with this email address.");
+        } else {
+          alert(`Error: ${error}`);
+        }
+        return;
+      }
+
+      // Success - show success message
       setIsSubmitted(true);
+    } catch (error) {
+      console.error("Password reset error:", error);
+      alert("An error occurred. Please try again.");
     }
   };
 

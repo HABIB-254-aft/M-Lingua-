@@ -8,6 +8,8 @@ import SettingsDrawer from "./SettingsDrawer";
 import ProfileDrawer from "./ProfileDrawer";
 import FriendsDrawer from "./FriendsDrawer";
 import InstallButton from "./InstallButton";
+import { onAuthStateChange, getCurrentUser } from "@/lib/firebase/auth";
+import { getUserProfile } from "@/lib/firebase/firestore";
 
 export default function Header() {
   const router = useRouter();
@@ -22,8 +24,27 @@ export default function Header() {
 
   // Check authentication status and load user data
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
+        // Check Firebase auth first
+        const firebaseUser = getCurrentUser();
+        if (firebaseUser) {
+          // Get user profile from Firestore
+          const profile = await getUserProfile(firebaseUser.uid);
+          if (profile) {
+            setIsAuthenticated(true);
+            setUser({
+              id: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: profile.displayName || firebaseUser.displayName,
+              username: profile.username,
+              photoURL: profile.photoURL || firebaseUser.photoURL,
+            });
+            return;
+          }
+        }
+        
+        // Fallback to localStorage for backward compatibility
         const authData = localStorage.getItem("mlingua_auth");
         if (authData) {
           const userData = JSON.parse(authData);
@@ -34,18 +55,54 @@ export default function Header() {
           setUser(null);
         }
       } catch {
-        setIsAuthenticated(false);
-        setUser(null);
+        // Fallback to localStorage
+        try {
+          const authData = localStorage.getItem("mlingua_auth");
+          if (authData) {
+            const userData = JSON.parse(authData);
+            setIsAuthenticated(true);
+            setUser(userData);
+          } else {
+            setIsAuthenticated(false);
+            setUser(null);
+          }
+        } catch {
+          setIsAuthenticated(false);
+          setUser(null);
+        }
       }
     };
 
     checkAuth();
+    
+    // Listen to Firebase auth state changes
+    const unsubscribe = onAuthStateChange(async (firebaseUser) => {
+      if (firebaseUser) {
+        const profile = await getUserProfile(firebaseUser.uid);
+        if (profile) {
+          setIsAuthenticated(true);
+          setUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: profile.displayName || firebaseUser.displayName,
+            username: profile.username,
+            photoURL: profile.photoURL || firebaseUser.photoURL,
+          });
+        }
+      } else {
+        setIsAuthenticated(false);
+        setUser(null);
+        localStorage.removeItem("mlingua_auth");
+      }
+    });
+    
     // Listen for storage changes (e.g., when user logs in/out in another tab)
     window.addEventListener("storage", checkAuth);
     // Also check on focus (in case user logged in/out in same tab)
     window.addEventListener("focus", checkAuth);
 
     return () => {
+      unsubscribe();
       window.removeEventListener("storage", checkAuth);
       window.removeEventListener("focus", checkAuth);
     };
