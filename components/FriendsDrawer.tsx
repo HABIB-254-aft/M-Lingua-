@@ -15,6 +15,7 @@ import {
   acceptFriendRequest,
   declineFriendRequest,
   cancelFriendRequest,
+  searchUsers,
 } from "@/lib/firebase/firestore";
 
 interface FriendsDrawerProps {
@@ -745,7 +746,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   }, [selectedFriend, isOpen, speakMessage]);
 
 
-  const handleSearch = (query: string) => {
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults([]);
@@ -753,58 +754,79 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     }
 
     try {
-      const usersData = localStorage.getItem("mlingua_users");
-      const allUsers = usersData ? JSON.parse(usersData) : [];
-      const currentUserId = currentUser?.id;
+      const firebaseUser = getCurrentUser();
+      const currentUserId = firebaseUser?.uid || currentUser?.id;
 
       // Filter out current user and existing friends
       const friendsIds = friends.map((f: any) => f.id);
       const sentRequestIds = sentRequests.map((r: any) => r.id);
 
-      const searchLower = query.toLowerCase();
-      
-      const filtered = allUsers.filter((user: any) => {
+      let searchResults: any[] = [];
+
+      if (firebaseUser) {
+        // Use Firestore to search for authenticated users
+        const { users, error } = await searchUsers(query, searchFilter, 50);
+        
+        if (error) {
+          console.error('Firestore search error:', error);
+          // Fall back to localStorage
+        } else {
+          searchResults = users;
+        }
+      }
+
+      // Fallback to localStorage if Firestore search failed or Firebase not available
+      if (searchResults.length === 0) {
+        const usersData = localStorage.getItem("mlingua_users");
+        const allUsers = usersData ? JSON.parse(usersData) : [];
+        const searchLower = query.toLowerCase();
+        
+        searchResults = allUsers.filter((user: any) => {
+          // Apply search filter
+          if (searchFilter === 'name') {
+            return user.displayName?.toLowerCase().includes(searchLower);
+          } else if (searchFilter === 'username') {
+            return user.username?.toLowerCase().includes(searchLower);
+          } else if (searchFilter === 'email') {
+            return user.email?.toLowerCase().includes(searchLower);
+          } else {
+            // 'all' - search in all fields
+            return (
+              user.displayName?.toLowerCase().includes(searchLower) ||
+              user.email?.toLowerCase().includes(searchLower) ||
+              user.username?.toLowerCase().includes(searchLower)
+            );
+          }
+        });
+
+        // Sort search results by relevance
+        searchResults.sort((a: any, b: any) => {
+          const aName = (a.displayName || "").toLowerCase();
+          const bName = (b.displayName || "").toLowerCase();
+          const aUsername = (a.username || "").toLowerCase();
+          const bUsername = (b.username || "").toLowerCase();
+          
+          const aStarts = aName.startsWith(searchLower) || aUsername.startsWith(searchLower);
+          const bStarts = bName.startsWith(searchLower) || bUsername.startsWith(searchLower);
+          
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          
+          return aName.localeCompare(bName);
+        });
+      }
+
+      // Filter out current user, existing friends, and sent requests
+      const filtered = searchResults.filter((user: any) => {
         if (user.id === currentUserId) return false;
         if (friendsIds.includes(user.id)) return false;
         if (sentRequestIds.includes(user.id)) return false;
-
-        // Apply search filter
-        if (searchFilter === 'name') {
-          return user.displayName?.toLowerCase().includes(searchLower);
-        } else if (searchFilter === 'username') {
-          return user.username?.toLowerCase().includes(searchLower);
-        } else if (searchFilter === 'email') {
-          return user.email?.toLowerCase().includes(searchLower);
-        } else {
-          // 'all' - search in all fields
-          return (
-            user.displayName?.toLowerCase().includes(searchLower) ||
-            user.email?.toLowerCase().includes(searchLower) ||
-            user.username?.toLowerCase().includes(searchLower)
-          );
-        }
+        return true;
       });
 
-      // Sort search results by relevance (exact matches first, then partial)
-      const sorted = filtered.sort((a: any, b: any) => {
-        const aName = (a.displayName || "").toLowerCase();
-        const bName = (b.displayName || "").toLowerCase();
-        const aUsername = (a.username || "").toLowerCase();
-        const bUsername = (b.username || "").toLowerCase();
-        
-        // Exact match at start gets priority
-        const aStarts = aName.startsWith(searchLower) || aUsername.startsWith(searchLower);
-        const bStarts = bName.startsWith(searchLower) || bUsername.startsWith(searchLower);
-        
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        
-        // Then sort alphabetically
-        return aName.localeCompare(bName);
-      });
-
-      setSearchResults(sorted);
-    } catch {
+      setSearchResults(filtered);
+    } catch (error) {
+      console.error('Search error:', error);
       setSearchResults([]);
     }
   };

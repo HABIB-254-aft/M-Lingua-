@@ -456,3 +456,89 @@ export async function getSentRequests(userId: string): Promise<{ requests: Frien
   }
 }
 
+// Search users in Firestore
+export interface SearchUserResult {
+  id: string;
+  email: string;
+  displayName?: string;
+  username?: string;
+  photoURL?: string;
+}
+
+export async function searchUsers(
+  searchQuery: string,
+  searchFilter: 'all' | 'name' | 'username' | 'email' = 'all',
+  limitCount: number = 50
+): Promise<{ users: SearchUserResult[]; error: string | null }> {
+  try {
+    const usersRef = collection(db, 'users');
+    const searchLower = searchQuery.toLowerCase().trim();
+    
+    if (!searchLower) {
+      return { users: [], error: null };
+    }
+
+    // Firestore doesn't support full-text search, so we'll fetch users and filter client-side
+    // For better performance, we could use Firestore's prefix matching, but for now
+    // we'll fetch a reasonable number and filter
+    const allUsersSnapshot = await getDocs(usersRef);
+    
+    const users: SearchUserResult[] = [];
+    allUsersSnapshot.forEach((doc) => {
+      const userData = doc.data() as UserProfile;
+      const user: SearchUserResult = {
+        id: doc.id,
+        email: userData.email,
+        displayName: userData.displayName,
+        username: userData.username,
+        photoURL: userData.photoURL,
+      };
+
+      // Apply search filter
+      let matches = false;
+      if (searchFilter === 'name') {
+        matches = userData.displayName?.toLowerCase().includes(searchLower) || false;
+      } else if (searchFilter === 'username') {
+        matches = userData.username?.toLowerCase().includes(searchLower) || false;
+      } else if (searchFilter === 'email') {
+        matches = userData.email?.toLowerCase().includes(searchLower) || false;
+      } else {
+        // 'all' - search in all fields
+        matches = (
+          userData.displayName?.toLowerCase().includes(searchLower) ||
+          userData.email?.toLowerCase().includes(searchLower) ||
+          userData.username?.toLowerCase().includes(searchLower)
+        ) || false;
+      }
+
+      if (matches) {
+        users.push(user);
+      }
+    });
+
+    // Sort by relevance (exact matches first, then partial)
+    users.sort((a, b) => {
+      const aName = (a.displayName || "").toLowerCase();
+      const bName = (b.displayName || "").toLowerCase();
+      const aUsername = (a.username || "").toLowerCase();
+      const bUsername = (b.username || "").toLowerCase();
+      
+      // Exact match at start gets priority
+      const aStarts = aName.startsWith(searchLower) || aUsername.startsWith(searchLower);
+      const bStarts = bName.startsWith(searchLower) || bUsername.startsWith(searchLower);
+      
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+      
+      // Then sort alphabetically
+      return aName.localeCompare(bName);
+    });
+
+    // Limit results
+    return { users: users.slice(0, limitCount), error: null };
+  } catch (error: any) {
+    console.error('Error searching users:', error);
+    return { users: [], error: error.message };
+  }
+}
+
