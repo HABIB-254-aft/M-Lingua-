@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, useGLTF, useAnimations } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { getSignAnimation, interpolateKeyframes, SignKeyframe } from "@/lib/sign-animations";
 import { loadSignDictionaryFromIndexedDB, hasSignDictionaryInIndexedDB } from "@/lib/sign-dictionary-sync";
@@ -16,40 +16,12 @@ interface SignLanguageAvatar3DProps {
 
 // 3D Model Loader Component
 // This will only render if /public/models/avatar.glb exists
+// Note: For now, this always returns null to use fallback
+// When a 3D model is added, this component can be updated to use useGLTF properly
 function ModelAvatar({ text, speed = 1 }: { text: string; speed: number }) {
-  // useGLTF will throw if file doesn't exist, so we need to handle it
-  // For now, we'll use a try-catch approach with a conditional check
-  const [hasModel, setHasModel] = useState(false);
-  
-  useEffect(() => {
-    // Check if model file exists
-    fetch("/models/avatar.glb", { method: "HEAD" })
-      .then(() => setHasModel(true))
-      .catch(() => setHasModel(false));
-  }, []);
-
-  if (!hasModel) {
-    return null; // Will use fallback
-  }
-
-  // If model exists, load it
-  try {
-    const gltf = useGLTF("/models/avatar.glb");
-    
-    if (gltf && gltf.scene) {
-      return (
-        <primitive 
-          object={gltf.scene.clone()} 
-          scale={1.5} 
-          position={[0, -1, 0]}
-        />
-      );
-    }
-  } catch (error) {
-    console.log("Failed to load 3D model. Using fallback.");
-    return null;
-  }
-
+  // TODO: When 3D model is added, use useGLTF hook here
+  // const gltf = useGLTF("/models/avatar.glb");
+  // Hooks must be called unconditionally, so we'll always use fallback for now
   return null;
 }
 
@@ -515,6 +487,8 @@ export default function SignLanguageAvatar3D({
   const [dimensions, setDimensions] = useState({ width: 400, height: 400 });
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    
     const updateDimensions = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();

@@ -19,6 +19,7 @@ export interface SignKeyframe {
   leftArm: ArmPose;
   rightArm: ArmPose;
   body?: BodyPose;
+  facialExpression?: FacialExpression;
 }
 
 export interface HandPose {
