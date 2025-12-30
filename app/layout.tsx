@@ -6,6 +6,7 @@ import Header from "../components/Header";
 import OfflineIndicator from "../components/OfflineIndicator";
 import CacheInitializer from "../components/CacheInitializer";
 import { ThemeProvider } from "../contexts/ThemeContext";
+import { OutputPreferencesProvider } from "../contexts/OutputPreferencesContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -101,10 +102,12 @@ export default function RootLayout({
           }}
         />
         <ThemeProvider>
-          <CacheInitializer />
-          <OfflineIndicator />
-          <Header />
-          {children}
+          <OutputPreferencesProvider>
+            <CacheInitializer />
+            <OfflineIndicator />
+            <Header />
+            {children}
+          </OutputPreferencesProvider>
         </ThemeProvider>
         <Script
           id="service-worker-registration"

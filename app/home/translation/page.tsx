@@ -2,14 +2,28 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { translateText } from "@/lib/translation-service";
+import { detectLanguage, SUPPORTED_LANGUAGES, getLanguageName } from "@/lib/language-detection";
+import { useOutputPreferences } from "@/contexts/OutputPreferencesContext";
+import OutputFormatToggles from "@/components/OutputFormatToggles";
+import SignLanguageAvatar from "../SignLanguageAvatar";
+import { useAdaptiveUI } from "@/hooks/useAdaptiveUI";
+import CollapsibleSection from "@/components/CollapsibleSection";
 
 export default function TranslationPage() {
   const router = useRouter();
+  const { preferences } = useOutputPreferences();
+  const adaptiveUI = useAdaptiveUI();
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
   const [sourceLang, setSourceLang] = useState("en");
   const [targetLang, setTargetLang] = useState("es");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [detectedLang, setDetectedLang] = useState<string | null>(null);
+  const [detectionConfidence, setDetectionConfidence] = useState<number>(0);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [autoDetectEnabled, setAutoDetectEnabled] = useState(true);
+  const detectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Voice navigation refs
   const voiceRecognitionRef = useRef<any | null>(null);
@@ -30,6 +44,45 @@ export default function TranslationPage() {
     }
   }, []);
 
+  // Auto-detect language when text changes
+  useEffect(() => {
+    if (!autoDetectEnabled || !inputText.trim() || inputText.trim().length < 3) {
+      setDetectedLang(null);
+      setDetectionConfidence(0);
+      return;
+    }
+
+    // Clear previous timeout
+    if (detectionTimeoutRef.current) {
+      clearTimeout(detectionTimeoutRef.current);
+    }
+
+    // Debounce detection (wait 500ms after user stops typing)
+    detectionTimeoutRef.current = setTimeout(async () => {
+      setIsDetecting(true);
+      try {
+        const result = await detectLanguage(inputText);
+        setDetectedLang(result.language);
+        setDetectionConfidence(result.confidence);
+        
+        // Auto-update source language if confidence is high enough
+        if (result.confidence >= 0.6 && result.language !== sourceLang) {
+          setSourceLang(result.language);
+        }
+      } catch (error) {
+        console.error("Language detection error:", error);
+      } finally {
+        setIsDetecting(false);
+      }
+    }, 500);
+
+    return () => {
+      if (detectionTimeoutRef.current) {
+        clearTimeout(detectionTimeoutRef.current);
+      }
+    };
+  }, [inputText, autoDetectEnabled, sourceLang]);
+
   const translate = async () => {
     console.log("Translate button clicked");
     const text = (inputText || "").trim();
@@ -49,59 +102,35 @@ export default function TranslationPage() {
     setOutputText("");
 
     try {
-      // Use MyMemory Translation API (free, no API key needed)
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
-      console.log("Translation URL:", url);
+      // Use translation service with fallback chain (Google → DeepL → MyMemory)
+      const result = await translateText(text, sourceLang, targetLang);
       
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Accept": "application/json",
-        },
-      });
+      console.log("Translation successful:", result.translatedText, "Provider:", result.provider);
+      setOutputText(result.translatedText);
 
-      console.log("Response status:", response.status, response.statusText);
+      // Save to history
+      try {
+        if (typeof window !== "undefined") {
+          const historyItem = {
+            id: Date.now().toString(),
+            sourceText: text,
+            translatedText: result.translatedText,
+            sourceLang: sourceLang,
+            targetLang: targetLang,
+            provider: result.provider,
+            timestamp: new Date().toLocaleString(),
+          };
 
-      if (!response.ok) {
-        throw new Error(`Translation API error: ${response.status} ${response.statusText}`);
-      }
+          const stored = localStorage.getItem("translationHistory");
+          const history = stored ? JSON.parse(stored) : [];
+          history.unshift(historyItem); // Add to beginning
 
-      const data = await response.json();
-      console.log("Translation response:", data);
-      
-      if (data.responseStatus === 200 && data.responseData && data.responseData.translatedText) {
-        const translatedText = data.responseData.translatedText;
-        setOutputText(translatedText);
-        console.log("Translation successful:", translatedText);
-
-        // Save to history
-        try {
-          if (typeof window !== "undefined") {
-            const historyItem = {
-              id: Date.now().toString(),
-              sourceText: text,
-              translatedText: translatedText,
-              sourceLang: sourceLang,
-              targetLang: targetLang,
-              timestamp: new Date().toLocaleString(),
-            };
-
-            const stored = localStorage.getItem("translationHistory");
-            const history = stored ? JSON.parse(stored) : [];
-            history.unshift(historyItem); // Add to beginning
-
-            // Keep only last 100 items
-            const limitedHistory = history.slice(0, 100);
-            localStorage.setItem("translationHistory", JSON.stringify(limitedHistory));
-          }
-        } catch (error) {
-          console.error("Error saving to history:", error);
+          // Keep only last 100 items
+          const limitedHistory = history.slice(0, 100);
+          localStorage.setItem("translationHistory", JSON.stringify(limitedHistory));
         }
-      } else {
-        // Try to get error message
-        const errorMsg = data.responseData?.error || data.responseDetails || "Translation failed";
-        console.error("Translation failed:", errorMsg);
-        throw new Error(errorMsg);
+      } catch (error) {
+        console.error("Error saving to history:", error);
       }
     } catch (error: any) {
       console.error("Translation error:", error);
@@ -127,7 +156,7 @@ export default function TranslationPage() {
   };
 
   const speakTranslation = () => {
-    if (typeof window === "undefined") return;
+    if (!preferences.showAudio || typeof window === "undefined") return;
     const t = (outputText || "").trim();
     if (!t) return;
 
@@ -144,20 +173,28 @@ export default function TranslationPage() {
     }
   };
 
-  const languages = [
-    { value: "en", label: "English" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "ru", label: "Russian" },
-    { value: "zh", label: "Chinese" },
-    { value: "ja", label: "Japanese" },
-    { value: "ko", label: "Korean" },
-    { value: "ar", label: "Arabic" },
-    { value: "hi", label: "Hindi" },
-  ];
+  // Auto-speak translation when it's generated (if audio is enabled)
+  useEffect(() => {
+    if (preferences.showAudio && outputText && !outputText.startsWith("Error:")) {
+      const t = outputText.trim();
+      if (!t || typeof window === "undefined") return;
+
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+
+      try {
+        synth.cancel();
+        const u = new SpeechSynthesisUtterance(t);
+        u.lang = targetLang === "es" ? "es-ES" : targetLang === "fr" ? "fr-FR" : "en-US";
+        synth.speak(u);
+      } catch {
+        // fail silently
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outputText, preferences.showAudio, targetLang]);
+
+  const languages = SUPPORTED_LANGUAGES;
 
   // Voice navigation functions
   const stopVoiceRecognition = useCallback(() => {
@@ -369,22 +406,77 @@ export default function TranslationPage() {
 
         <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Translation</h1>
 
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-3">
-            <label htmlFor="source-language" className="text-sm font-medium text-gray-900 dark:text-gray-100">From:</label>
-            <select
-              id="source-language"
-              value={sourceLang}
-              onChange={(e) => setSourceLang(e.target.value)}
-              className="px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-sm h-10 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
-              aria-label="Source language"
-            >
-              {languages.map((lang) => (
-                <option key={lang.value} value={lang.value}>
-                  {lang.label}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <label htmlFor="source-language" className="text-sm font-medium text-gray-900 dark:text-gray-100">From:</label>
+              <select
+                id="source-language"
+                value={sourceLang}
+                onChange={(e) => {
+                  setSourceLang(e.target.value);
+                  setAutoDetectEnabled(false); // Disable auto-detect when manually changed
+                }}
+                className="px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-md text-sm h-10 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600"
+                aria-label="Source language"
+              >
+                {languages.map((lang) => (
+                  <option key={lang.value} value={lang.value}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Detected Language Indicator */}
+            {detectedLang && autoDetectEnabled && inputText.trim().length >= 3 && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md text-xs">
+                <span className="text-blue-600 dark:text-blue-400">🔍</span>
+                <span className="text-blue-700 dark:text-blue-300 font-medium">
+                  Detected: {getLanguageName(detectedLang)}
+                </span>
+                {detectionConfidence > 0 && (
+                  <span className="text-blue-600 dark:text-blue-400">
+                    ({Math.round(detectionConfidence * 100)}%)
+                  </span>
+                )}
+                {isDetecting && (
+                  <span className="text-blue-500 dark:text-blue-400 animate-pulse">Detecting...</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (detectedLang) {
+                      setSourceLang(detectedLang);
+                    }
+                  }}
+                  className="ml-2 px-2 py-0.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  title="Use detected language"
+                >
+                  Use
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAutoDetectEnabled(false)}
+                  className="px-2 py-0.5 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 focus:outline-none"
+                  title="Disable auto-detection"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            
+            {/* Auto-detect toggle */}
+            {!autoDetectEnabled && (
+              <button
+                type="button"
+                onClick={() => setAutoDetectEnabled(true)}
+                className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Enable auto language detection"
+              >
+                🔍 Enable Auto-Detect
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -415,8 +507,13 @@ export default function TranslationPage() {
             {isTranslating ? "Translating..." : "Translate"}
           </button>
         </div>
+        
+        {/* Output Format Toggles */}
+        <div className="mb-4">
+          <OutputFormatToggles />
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className={`grid ${adaptiveUI.isMobile ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4 mb-4`}>
           <div>
             <label htmlFor="translation-input" className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
               Enter text to translate:
@@ -427,22 +524,49 @@ export default function TranslationPage() {
               placeholder="Type or paste text here..."
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              className="w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize"
+              className={`w-full ${adaptiveUI.isMobile ? 'h-40' : 'h-60'} px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize`}
             />
           </div>
 
-          <div>
-            <label htmlFor="translation-output" className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
-              Translation:
-            </label>
-            <textarea
-              id="translation-output"
-              aria-label="Translation:"
-              readOnly
-              value={outputText}
-              placeholder="Translation will appear here..."
-              className="w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize"
-            />
+          <div className="space-y-4">
+            {/* Translation Text Output */}
+            {adaptiveUI.showTextPanel && (
+              <CollapsibleSection
+                title="Translation"
+                icon="🌐"
+                defaultOpen={true}
+              >
+                <textarea
+                  id="translation-output"
+                  aria-label="Translation:"
+                  readOnly
+                  value={outputText}
+                  placeholder="Translation will appear here..."
+                  className={`w-full ${adaptiveUI.isMobile ? 'h-40' : 'h-60'} px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize`}
+                />
+              </CollapsibleSection>
+            )}
+
+            {/* Sign Language Output */}
+            {adaptiveUI.showSignPanel && outputText && !outputText.startsWith("Error:") && (
+              <CollapsibleSection
+                title="Sign Language"
+                icon="🙏"
+                defaultOpen={true}
+              >
+                <div className="border border-gray-200 dark:border-gray-700 rounded-sm overflow-hidden bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                  <div 
+                    id="translation-sign-avatar-container" 
+                    className={`${adaptiveUI.isMobile ? 'h-32' : adaptiveUI.isTablet ? 'h-40' : 'h-60'} w-full`}
+                  >
+                    <SignLanguageAvatar text={outputText} speed={1} containerId="translation-sign-avatar-container" />
+                  </div>
+                  <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
+                    Sign Language
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
           </div>
         </div>
 

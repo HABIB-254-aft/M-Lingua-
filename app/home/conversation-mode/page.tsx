@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import SignLanguageAvatar from "../SignLanguageAvatar";
+import { translateText as translateWithService } from "@/lib/translation-service";
+import { useOutputPreferences } from "@/contexts/OutputPreferencesContext";
+import OutputFormatToggles from "@/components/OutputFormatToggles";
+import { useAdaptiveUI } from "@/hooks/useAdaptiveUI";
+import CollapsibleSection from "@/components/CollapsibleSection";
 
 interface ConversationMessage {
   text: string;
@@ -15,7 +20,15 @@ interface ConversationMessage {
 
 export default function ConversationModePage() {
   const router = useRouter();
+  const { preferences } = useOutputPreferences();
+  const adaptiveUI = useAdaptiveUI();
   const [selectedMode, setSelectedMode] = useState<string>("standard");
+  
+  // Override adaptive UI accessibility mode with conversation mode if available
+  const effectiveAccessibilityMode = selectedMode === "blind" ? "blind" 
+    : selectedMode === "deaf" ? "deaf"
+    : selectedMode === "multilingual" ? "multilingual"
+    : adaptiveUI.accessibilityMode;
   const [showModeSelection, setShowModeSelection] = useState(false);
   const [isStarted, setIsStarted] = useState(false);
   const [roomCode, setRoomCode] = useState("");
@@ -83,55 +96,31 @@ export default function ConversationModePage() {
     // Check if offline
     const isOffline = !navigator.onLine;
     
-    // If not in cache, fetch from API
+    // If not in cache, use translation service with fallback chain
     try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-      });
-
-      if (!response.ok) {
-        // If offline or request failed, queue for background sync
-        if (isOffline || !response.ok) {
-          try {
-            const { queueRequest } = await import("@/lib/sync-queue");
-            await queueRequest('translation', url, {
-              method: "GET",
-              headers: { "Accept": "application/json" },
-            });
-            console.log("Translation queued for background sync");
-          } catch (queueError) {
-            console.error("Failed to queue translation:", queueError);
-          }
-        }
-        return null;
+      const result = await translateWithService(text, sourceLang, targetLang);
+      const translatedText = result.translatedText;
+      
+      // Cache the translation
+      try {
+        const { cacheTranslation } = await import("@/lib/indexeddb");
+        await cacheTranslation({
+          sourceText: text,
+          translatedText,
+          sourceLang,
+          targetLang,
+          timestamp: Date.now(),
+        });
+      } catch (cacheError) {
+        console.error("Cache save error:", cacheError);
       }
-
-      const data = await response.json();
-      if (data.responseStatus === 200 && data.responseData?.translatedText) {
-        const translatedText = data.responseData.translatedText;
-        
-        // Cache the translation
-        try {
-          const { cacheTranslation } = await import("@/lib/indexeddb");
-          await cacheTranslation({
-            sourceText: text,
-            translatedText,
-            sourceLang,
-            targetLang,
-            timestamp: Date.now(),
-          });
-        } catch (cacheError) {
-          console.error("Cache save error:", cacheError);
-        }
-        
-        return translatedText;
-      }
-    } catch (error) {
+      
+      console.log("Translation successful via", result.provider);
+      return translatedText;
+    } catch (error: any) {
       console.error("Translation error:", error);
       
-      // If offline, queue for background sync
+      // If offline, queue for background sync (using MyMemory as fallback URL)
       if (isOffline) {
         try {
           const { queueRequest } = await import("@/lib/sync-queue");
@@ -163,16 +152,16 @@ export default function ConversationModePage() {
     setConversationHistory((prev) => [...prev, message]);
     setInputText("");
 
-    // Process based on mode - ALL modes show multiple outputs simultaneously
+    // Process based on mode - Show outputs based on user preferences
     const trimmedText = text.trim();
 
-    // 1. ALWAYS show text (already in message)
+    // 1. Show text (if enabled in preferences - already in message)
     
-    // 2. ALWAYS show sign language animation (for deaf users and visual learners)
+    // 2. Show sign language animation (if enabled in preferences)
     // (Sign animation is handled by SignLanguageAvatar component in UI)
     
-    // 3. ALWAYS speak text (for blind users)
-    if (typeof window !== "undefined") {
+    // 3. Speak text (if audio output is enabled in preferences)
+    if (preferences.showAudio && typeof window !== "undefined") {
       const synth = window.speechSynthesis;
       if (synth) {
         try {
@@ -186,8 +175,8 @@ export default function ConversationModePage() {
       }
     }
 
-    // 4. If multilingual mode, translate and update message
-    if (selectedMode === "multilingual") {
+    // 4. If multilingual mode and translation is enabled, translate and update message
+    if (selectedMode === "multilingual" && preferences.showTranslation) {
       setIsTranslating(true);
       const translated = await translateText(trimmedText, "en", targetLang);
       if (translated) {
@@ -202,27 +191,6 @@ export default function ConversationModePage() {
         });
       }
       setIsTranslating(false);
-    }
-
-    // Process based on mode - ALL modes show multiple outputs simultaneously
-    // 1. ALWAYS show text (already in message)
-    
-    // 2. ALWAYS show sign language animation (for deaf users and visual learners)
-    // (Sign animation is handled by SignLanguageAvatar component in UI)
-    
-    // 3. ALWAYS speak text (for blind users)
-    if (typeof window !== "undefined") {
-      const synth = window.speechSynthesis;
-      if (synth) {
-        try {
-          synth.cancel();
-          const u = new SpeechSynthesisUtterance(trimmedText);
-          u.lang = "en-US";
-          synth.speak(u);
-        } catch {
-          // ignore
-        }
-      }
     }
   };
 
@@ -792,6 +760,11 @@ export default function ConversationModePage() {
               <p className="text-xs text-blue-800 dark:text-blue-300 sm:hidden">
                 ✨ Text + Sign + Audio
               </p>
+              
+              {/* Output Format Toggles */}
+              <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+                <OutputFormatToggles compact={true} />
+              </div>
               {selectedMode === "multilingual" && (
                 <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center gap-2">
                   <label htmlFor="target-lang" className="text-xs text-blue-800 dark:text-blue-300 whitespace-nowrap">
@@ -818,7 +791,7 @@ export default function ConversationModePage() {
               )}
             </div>
 
-            <div className="border-2 border-gray-300 dark:border-gray-700 rounded-sm p-2 sm:p-4 mb-4 max-h-96 sm:max-h-[32rem] overflow-y-auto bg-gray-50 dark:bg-gray-800">
+            <div className={`border-2 border-gray-300 dark:border-gray-700 rounded-sm p-2 sm:p-4 mb-4 ${adaptiveUI.isMobile ? 'max-h-64' : adaptiveUI.isTablet ? 'max-h-96' : 'max-h-[32rem]'} overflow-y-auto bg-gray-50 dark:bg-gray-800`}>
               {conversationHistory.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-center mt-8 text-sm sm:text-base">No messages yet. Start typing or recording to begin the conversation.</p>
               ) : (
@@ -830,39 +803,64 @@ export default function ConversationModePage() {
                         <span className="text-xs text-gray-500 dark:text-gray-400">{msg.timestamp}</span>
                       </div>
                       
-                      {/* Multi-Modal Output: Show ALL formats simultaneously */}
+                      {/* Multi-Modal Output: Show formats based on preferences and adaptive UI */}
                       <div className="space-y-2 sm:space-y-3">
                         {/* 1. Text Output */}
-                        <div>
-                          <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base font-medium break-words">{msg.text}</p>
-                        </div>
+                        {adaptiveUI.showTextPanel && (
+                          <CollapsibleSection
+                            title="Text"
+                            icon="📝"
+                            defaultOpen={true}
+                            className="mb-2"
+                          >
+                            <p className="text-gray-700 dark:text-gray-300 text-sm sm:text-base font-medium break-words">{msg.text}</p>
+                          </CollapsibleSection>
+                        )}
 
                         {/* 2. Sign Language Animation */}
-                        <div className="border border-gray-200 dark:border-gray-700 rounded-sm overflow-hidden bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
-                          <div id={`sign-avatar-container-${index}`} className="h-32 sm:h-48 w-full">
-                            <SignLanguageAvatar text={msg.text} speed={1} containerId={`sign-avatar-container-${index}`} />
-                          </div>
-                          <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
-                            Sign Language
-                          </div>
-                        </div>
+                        {adaptiveUI.showSignPanel && (
+                          <CollapsibleSection
+                            title="Sign Language"
+                            icon="🙏"
+                            defaultOpen={true}
+                            className="mb-2"
+                          >
+                            <div className="border border-gray-200 dark:border-gray-700 rounded-sm overflow-hidden bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+                              <div 
+                                id={`sign-avatar-container-${index}`} 
+                                className={`${adaptiveUI.signAnimationHeight} w-full`}
+                              >
+                                <SignLanguageAvatar text={msg.text} speed={1} containerId={`sign-avatar-container-${index}`} />
+                              </div>
+                              <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
+                                Sign Language
+                              </div>
+                            </div>
+                          </CollapsibleSection>
+                        )}
 
                         {/* 3. Translation (if available) */}
-                        {msg.translatedText && (
-                          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-sm p-2 sm:p-3">
-                            <div className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
-                              Translation ({msg.targetLang?.toUpperCase()}):
+                        {adaptiveUI.showTranslationPanel && msg.translatedText && (
+                          <CollapsibleSection
+                            title={`Translation (${msg.targetLang?.toUpperCase()})`}
+                            icon="🌐"
+                            defaultOpen={true}
+                            className="mb-2"
+                          >
+                            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-sm p-2 sm:p-3">
+                              <p className="text-sm sm:text-base text-blue-900 dark:text-blue-200 break-words">{msg.translatedText}</p>
                             </div>
-                            <p className="text-sm sm:text-base text-blue-900 dark:text-blue-200 break-words">{msg.translatedText}</p>
-                          </div>
+                          </CollapsibleSection>
                         )}
 
                         {/* 4. Audio indicator (speech synthesis happens automatically) */}
-                        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                          <span>🔊</span>
-                          <span className="hidden sm:inline">Audio playback active</span>
-                          <span className="sm:hidden">Audio</span>
-                        </div>
+                        {adaptiveUI.showAudioPanel && effectiveAccessibilityMode !== "deaf" && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 px-2 py-1 bg-gray-50 dark:bg-gray-800 rounded">
+                            <span>🔊</span>
+                            <span className="hidden sm:inline">Audio playback active</span>
+                            <span className="sm:hidden">Audio</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -877,7 +875,7 @@ export default function ConversationModePage() {
 
             <div className="space-y-2 mb-2">
               {/* Input row */}
-              <div className="flex items-center gap-2">
+              <div className={`flex ${adaptiveUI.isMobile ? 'flex-col' : 'flex-row'} items-stretch gap-2`}>
                 <input
                   type="text"
                   value={inputText}
@@ -896,7 +894,7 @@ export default function ConversationModePage() {
                   type="button"
                   onClick={() => handleSendMessage(inputText)}
                   disabled={!inputText.trim()}
-                  className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm sm:text-base font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className={`${adaptiveUI.isMobile ? 'w-full' : ''} px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm sm:text-base font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap`}
                   aria-label="Send message"
                 >
                   <span className="hidden sm:inline">Send</span>
