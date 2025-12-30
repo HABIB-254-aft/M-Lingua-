@@ -263,8 +263,19 @@ export async function getFriends(userId: string): Promise<{ friends: Friend[]; e
 export async function addFriend(userId: string, friend: Friend) {
   try {
     const friendsRef = collection(db, 'users', userId, 'friends');
+    // Clean the friend data to remove undefined values
+    const cleanedFriend = removeUndefined({
+      id: friend.id,
+      name: friend.name,
+      username: friend.username,
+      email: friend.email,
+      avatar: friend.avatar,
+      photoURL: friend.photoURL,
+      status: friend.status,
+    });
+    
     await setDoc(doc(friendsRef, friend.id), {
-      ...friend,
+      ...cleanedFriend,
       addedAt: serverTimestamp(),
     });
     return { success: true, error: null };
@@ -304,13 +315,35 @@ export async function getFriendRequests(userId: string): Promise<{ requests: Fri
   }
 }
 
+// Helper function to remove undefined values (Firestore doesn't allow undefined)
+const removeUndefined = (obj: any): any => {
+  const cleaned: any = {};
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      cleaned[key] = obj[key];
+    }
+  }
+  return cleaned;
+};
+
 // Send friend request
 export async function sendFriendRequest(userId: string, receiverId: string, request: FriendRequest) {
   try {
+    // Clean the request data to remove undefined values
+    const cleanedRequest = removeUndefined({
+      id: request.id,
+      name: request.name,
+      username: request.username,
+      email: request.email,
+      avatar: request.avatar,
+      photoURL: request.photoURL,
+      status: request.status,
+    });
+
     // Add to receiver's incoming requests
     const receiverRequestsRef = collection(db, 'users', receiverId, 'friendRequests');
     await setDoc(doc(receiverRequestsRef, userId), {
-      ...request,
+      ...cleanedRequest,
       sentAt: serverTimestamp(),
     });
     
@@ -319,10 +352,12 @@ export async function sendFriendRequest(userId: string, receiverId: string, requ
     await setDoc(doc(senderSentRef, receiverId), {
       id: receiverId,
       name: request.name,
-      username: request.username,
-      email: request.email,
-      avatar: request.avatar,
-      photoURL: request.photoURL,
+      ...removeUndefined({
+        username: request.username,
+        email: request.email,
+        avatar: request.avatar,
+        photoURL: request.photoURL,
+      }),
       sentAt: serverTimestamp(),
     });
     
@@ -344,9 +379,11 @@ export async function acceptFriendRequest(userId: string, requesterId: string, r
       await addFriend(requesterId, {
         id: userId,
         name: currentUser.displayName || currentUser.email || 'User',
-        username: currentUser.username,
         email: currentUser.email,
-        photoURL: currentUser.photoURL,
+        ...removeUndefined({
+          username: currentUser.username,
+          photoURL: currentUser.photoURL,
+        }),
         status: 'Offline',
       });
     }
