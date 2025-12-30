@@ -291,12 +291,12 @@ export default function Home() {
   }, [stopRecognition, clearTypingTimer]);
 
   return (
-    <main className="min-h-screen bg-slate-50 dark:bg-gray-900 flex items-center justify-center">
+    <main id="main-content" className="min-h-screen bg-slate-50 dark:bg-gray-900 flex items-center justify-center">
       <div className="max-w-6xl mx-auto px-6 text-center">
         <h1 className="text-2xl md:text-3xl font-semibold text-blue-600 dark:text-blue-400 text-center">Speak. Sign. Hear. Understand.</h1>
-        <p className="text-base text-gray-600 dark:text-gray-300 mt-3 text-center">Universal communication for everyone, regardless of ability or language.</p>
+        <p className="text-base text-gray-700 dark:text-gray-300 mt-3 text-center">Universal communication for everyone, regardless of ability or language.</p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-12">
           {/* Speech to Text — interactive card (preserves exact visuals) */}
           <SpeechToTextCard />
 

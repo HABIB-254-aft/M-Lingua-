@@ -617,7 +617,7 @@ export default function SpeechToTextPage() {
   }, [startVoiceRecognition, stopVoiceRecognition]);
 
   return (
-    <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
+    <main id="main-content" className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-6 text-left">
         <div className="mb-6">
           <button
@@ -667,6 +667,9 @@ export default function SpeechToTextPage() {
             <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Or Upload Audio File</span>
           </div>
           <div className="flex items-center gap-3 mb-2">
+            <label htmlFor="audio-file" className="sr-only">
+              Upload audio file for transcription
+            </label>
             <input
               ref={fileInputRef}
               type="file"
@@ -674,18 +677,20 @@ export default function SpeechToTextPage() {
               accept=".mp3,.wav,.ogg,.m4a"
               onChange={handleFileChange}
               className="hidden"
+              aria-label="Upload audio file"
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessingFile || isRecording}
               className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Choose audio file to upload"
             >
               Choose File
             </button>
-            <span className="text-sm text-gray-600 dark:text-gray-400">{fileName}</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">{fileName}</span>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Supported formats: MP3, WAV, OGG, M4A (max 25MB)</p>
+          <p className="text-xs text-gray-600 dark:text-gray-400">Supported formats: MP3, WAV, OGG, M4A (max 25MB)</p>
           <div className="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-sm">
             <p className="text-xs text-yellow-800 dark:text-yellow-300">
               <strong>Note:</strong> Audio file transcription requires microphone access. The system will play your audio file and attempt to transcribe it through your microphone. For best results, ensure your microphone is enabled and use the "Start Recording" button for direct transcription.
@@ -696,23 +701,37 @@ export default function SpeechToTextPage() {
           )}
         </div>
 
+        {/* Status announcements for screen readers */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {isProcessingFile && "Processing audio file. Please wait."}
+          {isRecording && "Recording. Speak now."}
+          {showStoppedMessage && "Recording stopped."}
+          {fileError && `Error: ${fileError}`}
+        </div>
+
         {isProcessingFile && (
-          <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-sm px-6 py-3 flex items-center gap-3">
-            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-sm px-6 py-3 flex items-center gap-3" role="status" aria-live="polite">
+            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" aria-hidden="true"></div>
             <span className="text-blue-700 dark:text-blue-300 font-medium">Processing audio file... Please wait.</span>
           </div>
         )}
 
         {isRecording && (
-          <div className="mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-sm px-6 py-3 flex items-center gap-3">
-            <div className="w-4 h-4 border-2 border-blue-400 rounded-full bg-white dark:bg-gray-800"></div>
+          <div className="mb-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 rounded-sm px-6 py-3 flex items-center gap-3" role="status" aria-live="polite">
+            <div className="w-4 h-4 border-2 border-blue-400 rounded-full bg-white dark:bg-gray-800" aria-hidden="true"></div>
             <span className="text-orange-700 dark:text-orange-300 font-medium">Recording... Speak now.</span>
           </div>
         )}
 
         {showStoppedMessage && (
-          <div className="mb-4 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-sm px-6 py-3">
+          <div className="mb-4 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-sm px-6 py-3" role="status" aria-live="polite">
             <span className="text-green-700 dark:text-green-300 font-medium">Recording stopped.</span>
+          </div>
+        )}
+
+        {fileError && (
+          <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-sm px-6 py-3" role="alert" aria-live="assertive">
+            <span className="text-red-700 dark:text-red-300 font-medium">Error: {fileError}</span>
           </div>
         )}
 

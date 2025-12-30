@@ -214,7 +214,7 @@ export default function TextToSignPage() {
   }, [startVoiceRecognition, stopVoiceRecognition]);
 
   return (
-    <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
+    <main id="main-content" className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-6 text-left">
         <div className="mb-6">
           <button

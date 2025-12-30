@@ -390,7 +390,7 @@ export default function TranslationPage() {
   }, [startVoiceRecognition, stopVoiceRecognition]);
 
   return (
-    <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
+    <main id="main-content" className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-6 text-left">
         <div className="mb-6">
           <button
@@ -405,6 +405,13 @@ export default function TranslationPage() {
         </div>
 
         <h1 className="text-2xl font-bold mb-3 text-gray-900 dark:text-gray-100">Translation</h1>
+
+        {/* Status announcements for screen readers */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {isTranslating && "Translating text. Please wait."}
+          {outputText && !outputText.startsWith("Error:") && !isTranslating && "Translation complete."}
+          {outputText && outputText.startsWith("Error:") && outputText}
+        </div>
 
         <div className="flex flex-col gap-3 mb-4">
           <div className="flex items-center gap-4 flex-wrap">
@@ -561,7 +568,7 @@ export default function TranslationPage() {
                   >
                     <SignLanguageAvatar text={outputText} speed={1} containerId="translation-sign-avatar-container" />
                   </div>
-                  <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
+                  <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-300 text-center">
                     Sign Language
                   </div>
                 </div>

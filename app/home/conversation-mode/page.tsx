@@ -562,7 +562,7 @@ export default function ConversationModePage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
+    <main id="main-content" className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 text-left">
         <div className="mb-6">
           <button
@@ -581,7 +581,7 @@ export default function ConversationModePage() {
         {!showModeSelection && !isStarted && (
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Connect with Another Device</h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">Start or join a conversation room to communicate with someone on another device in real-time.</p>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">Start or join a conversation room to communicate with someone on another device in real-time.</p>
 
             <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
               <div className="flex items-start gap-2">
@@ -596,7 +596,7 @@ export default function ConversationModePage() {
             <div className="space-y-6">
               <div className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
                 <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-2">Create Room (Host)</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">Create a new conversation room and share the code with the other person.</p>
+                <p className="text-gray-700 dark:text-gray-300 mb-4">Create a new conversation room and share the code with the other person.</p>
                 {!createdRoomCode ? (
                   <button
                     type="button"
@@ -644,7 +644,7 @@ export default function ConversationModePage() {
 
               <div className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800">
                 <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-2">Join Room</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-2">Enter the 6-character room code to join an existing conversation.</p>
+                      <p className="text-gray-700 dark:text-gray-300 mb-2">Enter the 6-character room code to join an existing conversation.</p>
                 <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3 mb-4">
                   <div className="flex items-start gap-2">
                     <span className="text-yellow-600 dark:text-yellow-400">⚠️</span>
@@ -832,7 +832,7 @@ export default function ConversationModePage() {
                               >
                                 <SignLanguageAvatar text={msg.text} speed={1} containerId={`sign-avatar-container-${index}`} />
                               </div>
-                              <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400 text-center">
+                              <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-300 text-center">
                                 Sign Language
                               </div>
                             </div>
