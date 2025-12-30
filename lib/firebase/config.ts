@@ -90,35 +90,64 @@ const getStorageInstance = (): FirebaseStorage => {
   return _storage;
 };
 
-// Export getters - only initialize on client side
-// During build/SSR, these won't be used anyway (all Firebase usage is in client components)
-// But we need to export them to satisfy TypeScript
-let auth: Auth;
-let db: Firestore;
-let storage: FirebaseStorage;
+// Export Firebase services with lazy initialization
+// These will only initialize when accessed on the client side
+// During build/SSR, they won't be used (all Firebase usage is in client components)
 
-// Only initialize if we're on the client side AND config is valid
-if (typeof window !== 'undefined' && isFirebaseConfigValid()) {
-  try {
-    auth = getAuthInstance();
-    db = getDbInstance();
-    storage = getStorageInstance();
-  } catch (error) {
-    // If initialization fails, create dummy exports
-    // They will throw proper errors at runtime if used
-    console.warn('Firebase initialization failed:', error);
-    auth = {} as Auth;
-    db = {} as Firestore;
-    storage = {} as FirebaseStorage;
-  }
-} else {
-  // During build/SSR or when config is invalid, create dummy exports
-  // These will only be used in client components, which will re-initialize properly
-  auth = {} as Auth;
-  db = {} as Firestore;
-  storage = {} as FirebaseStorage;
+// Use a function that initializes on first access
+function getAuthLazy(): Auth {
+  return getAuthInstance();
 }
 
-export { auth, db, storage };
+function getDbLazy(): Firestore {
+  return getDbInstance();
+}
+
+function getStorageLazy(): FirebaseStorage {
+  return getStorageInstance();
+}
+
+// Export as constants that call the lazy getters
+// This ensures Firebase only initializes when actually used
+export const auth: Auth = (() => {
+  // During build, return a proxy that will initialize on first property access
+  if (typeof window === 'undefined') {
+    // Return a proxy that initializes on first access
+    return new Proxy({} as Auth, {
+      get(_target, prop) {
+        // This will only be called on client side
+        const instance = getAuthLazy();
+        return (instance as any)[prop];
+      },
+    });
+  }
+  // On client side, initialize immediately
+  return getAuthLazy();
+})();
+
+export const db: Firestore = (() => {
+  if (typeof window === 'undefined') {
+    return new Proxy({} as Firestore, {
+      get(_target, prop) {
+        const instance = getDbLazy();
+        return (instance as any)[prop];
+      },
+    });
+  }
+  return getDbLazy();
+})();
+
+export const storage: FirebaseStorage = (() => {
+  if (typeof window === 'undefined') {
+    return new Proxy({} as FirebaseStorage, {
+      get(_target, prop) {
+        const instance = getStorageLazy();
+        return (instance as any)[prop];
+      },
+    });
+  }
+  return getStorageLazy();
+})();
+
 export default initFirebase;
 
