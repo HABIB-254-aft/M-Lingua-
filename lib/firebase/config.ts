@@ -43,8 +43,28 @@ const initFirebase = (): FirebaseApp => {
 
   // Check config validity BEFORE trying to initialize
   if (!isFirebaseConfigValid()) {
-    // During build, env vars might not be set - that's okay, just don't initialize
-    throw new Error('Firebase configuration is missing. Please check your environment variables.');
+    // Don't throw - just log a warning and return a dummy app
+    // This allows the app to load even if Firebase isn't configured
+    console.warn('Firebase configuration is missing. Please set NEXT_PUBLIC_FIREBASE_* environment variables in Vercel.');
+    // Return a minimal app object to prevent crashes
+    if (!app) {
+      // Create a minimal config with placeholder values to prevent initialization errors
+      const minimalConfig = {
+        apiKey: 'placeholder',
+        authDomain: 'placeholder',
+        projectId: 'placeholder',
+        storageBucket: 'placeholder',
+        messagingSenderId: 'placeholder',
+        appId: 'placeholder',
+      };
+      try {
+        app = initializeApp(minimalConfig, 'placeholder');
+      } catch {
+        // If that fails, just return undefined and let the getters handle it
+        return undefined as any;
+      }
+    }
+    return app;
   }
 
   if (!app) {
@@ -59,13 +79,18 @@ const initFirebase = (): FirebaseApp => {
 };
 
 // Initialize Firebase services - only on client side
-// Use try-catch to gracefully handle build-time initialization
+// Use try-catch to gracefully handle missing configuration
 const getAuthInstance = (): Auth => {
   if (typeof window === 'undefined') {
     throw new Error('Firebase Auth can only be used on the client side');
   }
   if (!_auth) {
-    _auth = getAuth(initFirebase());
+    const app = initFirebase();
+    if (!app || !isFirebaseConfigValid()) {
+      // Return a minimal auth object to prevent crashes
+      return {} as Auth;
+    }
+    _auth = getAuth(app);
   }
   return _auth;
 };
@@ -75,7 +100,11 @@ const getDbInstance = (): Firestore => {
     throw new Error('Firestore can only be used on the client side');
   }
   if (!_db) {
-    _db = getFirestore(initFirebase());
+    const app = initFirebase();
+    if (!app || !isFirebaseConfigValid()) {
+      return {} as Firestore;
+    }
+    _db = getFirestore(app);
   }
   return _db;
 };
@@ -85,7 +114,11 @@ const getStorageInstance = (): FirebaseStorage => {
     throw new Error('Firebase Storage can only be used on the client side');
   }
   if (!_storage) {
-    _storage = getStorage(initFirebase());
+    const app = initFirebase();
+    if (!app || !isFirebaseConfigValid()) {
+      return {} as FirebaseStorage;
+    }
+    _storage = getStorage(app);
   }
   return _storage;
 };
