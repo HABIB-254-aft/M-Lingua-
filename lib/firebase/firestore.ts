@@ -311,6 +311,11 @@ export function subscribeToFriends(
 // Add a friend
 export async function addFriend(userId: string, friend: Friend) {
   try {
+    if (!db) {
+      console.error('Firestore db not initialized');
+      return { success: false, error: 'Firestore not initialized' };
+    }
+    
     const friendsRef = collection(db, 'users', userId, 'friends');
     // Clean the friend data to remove undefined values
     const cleanedFriend = removeUndefined({
@@ -323,12 +328,15 @@ export async function addFriend(userId: string, friend: Friend) {
       status: friend.status,
     });
     
+    console.log('Adding friend to Firestore - User:', userId, 'Friend ID:', friend.id, 'Data:', cleanedFriend);
     await setDoc(doc(friendsRef, friend.id), {
       ...cleanedFriend,
       addedAt: serverTimestamp(),
     });
+    console.log('Friend added successfully to Firestore');
     return { success: true, error: null };
   } catch (error: any) {
+    console.error('Error adding friend to Firestore:', error);
     return { success: false, error: error.message };
   }
 }
