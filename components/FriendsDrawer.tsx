@@ -16,6 +16,7 @@ import {
   declineFriendRequest,
   cancelFriendRequest,
   searchUsers,
+  subscribeToFriends,
 } from "@/lib/firebase/firestore";
 
 interface FriendsDrawerProps {
@@ -696,6 +697,22 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     // Load friends data
     loadFriendsData();
 
+    // Set up real-time listener for friends changes (when using Firebase)
+    let unsubscribeFriends: (() => void) | null = null;
+    const setupFriendsListener = async () => {
+      const firebaseUser = getCurrentUser();
+      if (firebaseUser && firebaseUser.uid) {
+        try {
+          unsubscribeFriends = subscribeToFriends(firebaseUser.uid, (updatedFriends) => {
+            setFriends(updatedFriends);
+          });
+        } catch (error) {
+          console.error('Error setting up friends listener:', error);
+        }
+      }
+    };
+    setupFriendsListener();
+
     // Listen for unread count updates
     const handleUnreadUpdate = () => {
       loadUnreadCounts();
@@ -721,6 +738,10 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       clearTypingTimer();
       stopVoiceRecognition();
       window.removeEventListener('unreadCountUpdated', handleUnreadUpdate);
+      // Unsubscribe from friends listener
+      if (unsubscribeFriends) {
+        unsubscribeFriends();
+      }
       if (typeof window !== "undefined") {
         try {
           window.speechSynthesis.cancel();

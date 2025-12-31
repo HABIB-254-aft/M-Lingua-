@@ -270,6 +270,28 @@ export async function getFriends(userId: string): Promise<{ friends: Friend[]; e
   }
 }
 
+// Listen to friends list changes in real-time
+export function subscribeToFriends(
+  userId: string,
+  callback: (friends: Friend[]) => void
+) {
+  const friendsRef = collection(db, 'users', userId, 'friends');
+  
+  return onSnapshot(friendsRef, (snapshot: QuerySnapshot<DocumentData>) => {
+    const friends: Friend[] = [];
+    snapshot.forEach((doc) => {
+      friends.push({
+        id: doc.id,
+        ...doc.data(),
+      } as Friend);
+    });
+    callback(friends);
+  }, (error) => {
+    console.error('Error listening to friends:', error);
+    callback([]);
+  });
+}
+
 // Add a friend
 export async function addFriend(userId: string, friend: Friend) {
   try {
