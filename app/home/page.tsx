@@ -25,7 +25,7 @@ import {
   Clock
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { subscribeToFriends, getFriendRequests, getUserPresence } from "@/lib/firebase/firestore";
+import { subscribeToFriends, getFriends, getFriendRequests, getUserPresence } from "@/lib/firebase/firestore";
 import type { Friend } from "@/lib/firebase/firestore";
 
 /**
@@ -68,24 +68,57 @@ export default function Home() {
         if (firebaseUser) {
           currentUserIdRef.current = firebaseUser.uid;
 
-          // Set up friends listener
+          // Initial load of friends (before subscription)
+          const loadInitialFriends = async () => {
+            const { friends: initialFriends, error } = await getFriends(firebaseUser.uid);
+            if (!error && initialFriends) {
+              console.log('[Homepage] Initial friends load:', initialFriends.length);
+              setFriendsCount(initialFriends.length);
+              
+              if (initialFriends.length > 0) {
+                const friendsWithPresence = await Promise.all(
+                  initialFriends.slice(0, 3).map(async (friend) => {
+                    const { presence } = await getUserPresence(friend.id);
+                    return {
+                      id: friend.id,
+                      name: friend.name || friend.username || friend.email,
+                      status: presence?.status === 'Online' ? 'Online' : 'Offline',
+                      avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
+                    };
+                  })
+                );
+                setRecentFriends(friendsWithPresence);
+              }
+            }
+          };
+          
+          loadInitialFriends();
+
+          // Set up friends listener for real-time updates
           const unsubscribeFriends = subscribeToFriends(firebaseUser.uid, async (friends: Friend[]) => {
+            console.log('[Homepage] Friends subscription callback received:', friends.length, 'friends');
             setFriendsCount(friends.length);
             
             // Get presence for each friend and format for display
-            const friendsWithPresence = await Promise.all(
-              friends.slice(0, 3).map(async (friend) => {
-                const { presence } = await getUserPresence(friend.id);
-                return {
-                  id: friend.id,
-                  name: friend.name || friend.username || friend.email,
-                  status: presence?.status === 'Online' ? 'Online' : 'Offline',
-                  avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
-                };
-              })
-            );
-            
-            setRecentFriends(friendsWithPresence);
+            if (friends.length > 0) {
+              const friendsWithPresence = await Promise.all(
+                friends.slice(0, 3).map(async (friend) => {
+                  const { presence } = await getUserPresence(friend.id);
+                  return {
+                    id: friend.id,
+                    name: friend.name || friend.username || friend.email,
+                    status: presence?.status === 'Online' ? 'Online' : 'Offline',
+                    avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
+                  };
+                })
+              );
+              
+              console.log('[Homepage] Setting recent friends:', friendsWithPresence.length);
+              setRecentFriends(friendsWithPresence);
+            } else {
+              console.log('[Homepage] No friends found, clearing recent friends');
+              setRecentFriends([]);
+            }
           });
 
           // Load friend requests count
