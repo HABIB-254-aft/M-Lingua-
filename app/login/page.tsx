@@ -504,7 +504,6 @@ export default function Login() {
         displayName: profile?.displayName || user.displayName,
         username: profile?.username || user.email?.split("@")[0],
         photoURL: profile?.photoURL || user.photoURL, // Use Firestore photoURL first, then Firebase Auth
-        photoURL: user.photoURL,
       };
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 
