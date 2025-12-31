@@ -334,12 +334,17 @@ export default function Signup() {
         updatedAt: new Date(),
       });
 
+      // Reload profile to get the saved data
+      const savedProfile = await getUserProfile(user.uid);
+
       // Save auth state to localStorage for backward compatibility
+      // Use profile data from Firestore to ensure consistency
       const userForSession = {
         id: user.uid,
         email: user.email,
-        displayName: fullName,
-        username: username,
+        displayName: savedProfile?.displayName || fullName,
+        username: savedProfile?.username || username,
+        photoURL: savedProfile?.photoURL || user.photoURL,
       };
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 
@@ -440,22 +445,26 @@ export default function Signup() {
         
         profile = await getUserProfile(user.uid);
       } else {
-        // Update profile with latest Google info
-        await saveUserProfile(user.uid, {
-          photoURL: user.photoURL || profile.photoURL,
-          displayName: user.displayName || profile.displayName,
-        });
+        // Only update photoURL if it's different (don't overwrite custom uploaded photos)
+        // Only update if Google has a photo and Firestore doesn't
+        if (user.photoURL && !profile.photoURL) {
+          await saveUserProfile(user.uid, {
+            photoURL: user.photoURL,
+          });
+        }
       }
 
       // Get the final profile for session
       const finalProfile = await getUserProfile(user.uid);
 
       // Save auth state to localStorage for backward compatibility
+      // Use profile data from Firestore (which has the saved photoURL) instead of just Firebase Auth
       const userForSession = {
         id: user.uid,
         email: user.email,
         displayName: finalProfile?.displayName || user.displayName || user.email?.split("@")[0] || "user",
         username: finalProfile?.username || user.email?.split("@")[0] || "user",
+        photoURL: finalProfile?.photoURL || user.photoURL, // Use Firestore photoURL first, then Firebase Auth
       };
       localStorage.setItem("mlingua_auth", JSON.stringify(userForSession));
 

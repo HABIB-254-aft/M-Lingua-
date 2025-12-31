@@ -507,7 +507,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     }
   }, [currentUser?.id]);
 
-  const loadFriendsData = useCallback(async () => {
+  const loadFriendsData = useCallback(async (): Promise<void> => {
     try {
       const firebaseUser = getCurrentUser();
       const userId = firebaseUser?.uid || currentUser?.id;
@@ -657,6 +657,26 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
         // Check Firebase auth first
         const firebaseUser = getCurrentUser();
         if (firebaseUser) {
+          // Get user profile from Firestore to get the saved photoURL
+          try {
+            const { getUserProfile } = await import("@/lib/firebase/firestore");
+            const profile = await getUserProfile(firebaseUser.uid);
+            if (profile) {
+              setCurrentUser({
+                id: firebaseUser.uid,
+                email: firebaseUser.email || profile.email,
+                displayName: firebaseUser.displayName || profile.displayName,
+                username: profile.username,
+                photoURL: profile.photoURL || firebaseUser.photoURL, // Use Firestore photoURL first
+              });
+              console.log('Loaded current user with photoURL from Firestore:', profile.photoURL || firebaseUser.photoURL);
+              return;
+            }
+          } catch (e) {
+            console.warn('Could not load user profile from Firestore:', e);
+          }
+          
+          // Fallback to Firebase Auth data
           setCurrentUser({
             id: firebaseUser.uid,
             email: firebaseUser.email,
@@ -694,17 +714,33 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     
     loadCurrentUser();
 
-    // Load friends data (reloads when drawer opens)
-    loadFriendsData();
-
     // Set up real-time listener for friends changes (when using Firebase)
     // This ensures friends list updates immediately when someone accepts your request
     let unsubscribeFriends: (() => void) | null = null;
-    const setupFriendsListener = () => {
+    const setupFriendsListener = async () => {
+      // Wait for currentUser to be loaded
+      let attempts = 0;
+      while ((!currentUser?.id && !getCurrentUser()?.uid) && attempts < 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
       const firebaseUser = getCurrentUser();
-      if (firebaseUser && firebaseUser.uid) {
+      const userId = firebaseUser?.uid || currentUser?.id;
+      
+      if (userId) {
         try {
-          unsubscribeFriends = subscribeToFriends(firebaseUser.uid, (updatedFriends) => {
+          console.log('Setting up friends listener for user:', userId);
+          // Unsubscribe from any existing listener first
+          if (unsubscribeFriends) {
+            try {
+              unsubscribeFriends();
+            } catch (e) {
+              console.warn('Error unsubscribing from previous listener:', e);
+            }
+          }
+          
+          unsubscribeFriends = subscribeToFriends(userId, (updatedFriends) => {
             console.log('Friends list updated via real-time listener:', updatedFriends.length, updatedFriends);
             setFriends(updatedFriends);
             // Also update localStorage for backward compatibility
@@ -714,15 +750,19 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               console.warn('Failed to update localStorage:', e);
             }
           });
-          console.log('Friends real-time listener set up successfully for user:', firebaseUser.uid);
+          console.log('Friends real-time listener set up successfully for user:', userId);
         } catch (error) {
           console.error('Error setting up friends listener:', error);
         }
       } else {
-        console.warn('Cannot set up friends listener: Firebase user not available');
+        console.warn('Cannot set up friends listener: User ID not available. Firebase user:', firebaseUser, 'Current user:', currentUser);
       }
     };
-    setupFriendsListener();
+    
+    // Load friends data first, then set up listener
+    loadFriendsData().then(() => {
+      setupFriendsListener();
+    });
 
     // Listen for unread count updates
     const handleUnreadUpdate = () => {
@@ -906,29 +946,49 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       const firebaseUser = getCurrentUser();
       const userId = firebaseUser?.uid || currentUser.id;
       
+      // Get the latest user profile from Firestore to ensure we have photoURL
+      let userPhotoURL = currentUser.photoURL;
+      if (firebaseUser) {
+        try {
+          const { getUserProfile } = await import("@/lib/firebase/firestore");
+          const profile = await getUserProfile(firebaseUser.uid);
+          if (profile?.photoURL) {
+            userPhotoURL = profile.photoURL;
+            console.log('Got photoURL from Firestore profile:', userPhotoURL);
+          }
+        } catch (e) {
+          console.warn('Could not fetch user profile for photoURL:', e);
+        }
+      }
+      
+      console.log('Sending friend request with photoURL:', userPhotoURL);
+      
       const newRequest = {
         id: currentUser.id,
         name: currentUser.displayName || currentUser.email,
         username: currentUser.username,
         email: currentUser.email,
         avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
-        photoURL: currentUser.photoURL,
+        photoURL: userPhotoURL,
         timestamp: new Date().toISOString(),
       };
 
       if (firebaseUser) {
         // Use Firestore
+        const requestData = {
+          id: currentUser.id,
+          name: currentUser.displayName || currentUser.email,
+          username: currentUser.username,
+          email: currentUser.email,
+          avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
+          photoURL: userPhotoURL,
+        };
+        
+        console.log('Sending friend request with data:', requestData);
         const { success, error } = await sendFriendRequest(
           userId,
           user.id,
-          {
-            id: currentUser.id,
-            name: currentUser.displayName || currentUser.email,
-            username: currentUser.username,
-            email: currentUser.email,
-            avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
-            photoURL: currentUser.photoURL,
-          }
+          requestData
         );
 
         if (!success) {
@@ -987,6 +1047,11 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       const firebaseUser = getCurrentUser();
       const userId = firebaseUser?.uid || currentUser.id;
 
+      console.log('=== HANDLE ACCEPT REQUEST ===');
+      console.log('Current user (accepting):', userId);
+      console.log('Request from user (requester):', request.id);
+      console.log('Request data:', request);
+
       const newFriend = {
         id: request.id,
         name: request.name,
@@ -999,12 +1064,18 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
 
       if (firebaseUser) {
         // Use Firestore
+        console.log('Calling acceptFriendRequest with:', { userId, requesterId: request.id, requesterData: newFriend });
         const { success, error } = await acceptFriendRequest(userId, request.id, newFriend);
         
+        console.log('acceptFriendRequest result:', { success, error });
+        
         if (!success) {
+          console.error('Failed to accept friend request:', error);
           showNotification(`Error accepting friend request: ${error}`, 'error');
           return;
         }
+        
+        console.log('Friend request accepted successfully, reloading friends...');
 
         // Reload friends list from Firestore to ensure sync
         const { friends: updatedFriendsList, error: friendsError } = await getFriends(userId);
@@ -1455,7 +1526,19 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               <button
                 type="button"
                 onClick={async () => {
+                  console.log('Manual refresh triggered');
+                  const firebaseUser = getCurrentUser();
+                  const userId = firebaseUser?.uid || currentUser?.id;
+                  console.log('Refreshing friends for user:', userId);
                   await loadFriendsData();
+                  // Also verify friends in Firestore
+                  if (userId && firebaseUser) {
+                    const { friends, error } = await getFriends(userId);
+                    console.log('Friends from Firestore after refresh:', friends.length, friends);
+                    if (error) {
+                      console.error('Error loading friends:', error);
+                    }
+                  }
                 }}
                 className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                 title="Refresh friends list"
@@ -1639,14 +1722,41 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             </div>
             {friendRequests.length > 0 ? (
               <div className="space-y-2">
-                {friendRequests.map((request: any) => (
+                {friendRequests.map((request: any) => {
+                  // Debug logging
+                  if (request.photoURL) {
+                    console.log('Rendering friend request with photoURL:', request.id, request.photoURL);
+                  } else {
+                    console.log('Friend request has NO photoURL:', request.id, request);
+                  }
+                  
+                  return (
                   <div
                     key={request.id}
                     className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:shadow-md transition-all"
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0">
-                        {request.avatar || (request.name || "U").charAt(0).toUpperCase()}
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0 overflow-hidden">
+                        {request.photoURL ? (
+                          <img
+                            src={request.photoURL}
+                            alt={request.name || "User"}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              console.error('Image failed to load:', request.photoURL, e);
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              if (target.parentElement) {
+                                target.parentElement.innerHTML = (request.avatar || request.name || "U").charAt(0).toUpperCase();
+                              }
+                            }}
+                            onLoad={() => {
+                              console.log('Image loaded successfully:', request.photoURL);
+                            }}
+                          />
+                        ) : (
+                          request.avatar || (request.name || "U").charAt(0).toUpperCase()
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
@@ -1676,7 +1786,8 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="p-6 text-center bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -1754,8 +1865,23 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                     className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:shadow-md transition-all"
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0">
-                        {request.avatar || (request.name || "U").charAt(0).toUpperCase()}
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0 overflow-hidden">
+                        {request.photoURL ? (
+                          <img
+                            src={request.photoURL}
+                            alt={request.name || "User"}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              if (target.parentElement) {
+                                target.parentElement.innerHTML = (request.avatar || request.name || "U").charAt(0).toUpperCase();
+                              }
+                            }}
+                          />
+                        ) : (
+                          request.avatar || (request.name || "U").charAt(0).toUpperCase()
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">

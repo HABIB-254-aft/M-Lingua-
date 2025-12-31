@@ -316,6 +316,16 @@ export async function addFriend(userId: string, friend: Friend) {
       return { success: false, error: 'Firestore not initialized' };
     }
     
+    if (!userId) {
+      console.error('User ID is required');
+      return { success: false, error: 'User ID is required' };
+    }
+    
+    if (!friend.id) {
+      console.error('Friend ID is required');
+      return { success: false, error: 'Friend ID is required' };
+    }
+    
     const friendsRef = collection(db, 'users', userId, 'friends');
     // Clean the friend data to remove undefined values
     const cleanedFriend = removeUndefined({
@@ -329,11 +339,21 @@ export async function addFriend(userId: string, friend: Friend) {
     });
     
     console.log('Adding friend to Firestore - User:', userId, 'Friend ID:', friend.id, 'Data:', cleanedFriend);
-    await setDoc(doc(friendsRef, friend.id), {
+    const friendDocRef = doc(friendsRef, friend.id);
+    await setDoc(friendDocRef, {
       ...cleanedFriend,
       addedAt: serverTimestamp(),
     });
-    console.log('Friend added successfully to Firestore');
+    
+    // Verify the friend was added
+    const verifyDoc = await getDoc(friendDocRef);
+    if (verifyDoc.exists()) {
+      console.log('Friend added successfully to Firestore and verified. Path: users/', userId, '/friends/', friend.id);
+    } else {
+      console.error('Friend was not added - document does not exist after setDoc');
+      return { success: false, error: 'Friend was not added - verification failed' };
+    }
+    
     return { success: true, error: null };
   } catch (error: any) {
     console.error('Error adding friend to Firestore:', error);
@@ -341,13 +361,34 @@ export async function addFriend(userId: string, friend: Friend) {
   }
 }
 
-// Remove a friend
+// Remove a friend (bidirectional - removes from both users' friends lists)
 export async function removeFriend(userId: string, friendId: string) {
   try {
+    console.log('=== REMOVE FRIEND ===');
+    console.log('User removing friend (userId):', userId);
+    console.log('Friend to remove (friendId):', friendId);
+    
+    if (!userId || !friendId) {
+      console.error('Missing user IDs - userId:', userId, 'friendId:', friendId);
+      return { success: false, error: 'Missing user IDs' };
+    }
+    
+    // Remove friend from user's friends list
+    console.log('Step 1: Removing friend from user\'s friends list (users/', userId, '/friends/', friendId, ')');
     const friendRef = doc(db, 'users', userId, 'friends', friendId);
     await deleteDoc(friendRef);
+    console.log('SUCCESS: Removed friend from user\'s friends list');
+    
+    // Remove user from friend's friends list (bidirectional)
+    console.log('Step 2: Removing user from friend\'s friends list (users/', friendId, '/friends/', userId, ')');
+    const userRef = doc(db, 'users', friendId, 'friends', userId);
+    await deleteDoc(userRef);
+    console.log('SUCCESS: Removed user from friend\'s friends list');
+    
+    console.log('=== FRIEND REMOVED SUCCESSFULLY (BIDIRECTIONAL) ===');
     return { success: true, error: null };
   } catch (error: any) {
+    console.error('Error removing friend:', error);
     return { success: false, error: error.message };
   }
 }
@@ -360,14 +401,19 @@ export async function getFriendRequests(userId: string): Promise<{ requests: Fri
     
     const requests: FriendRequest[] = [];
     snapshot.forEach((doc) => {
+      const data = doc.data();
+      console.log('Friend request document:', doc.id, data);
+      console.log('Friend request photoURL:', data.photoURL);
       requests.push({
         id: doc.id,
-        ...doc.data(),
+        ...data,
       } as FriendRequest);
     });
     
+    console.log('Loaded friend requests:', requests.length, 'requests with photoURLs:', requests.filter(r => r.photoURL).length);
     return { requests, error: null };
   } catch (error: any) {
+    console.error('Error getting friend requests:', error);
     return { requests: [], error: error.message };
   }
 }
@@ -375,6 +421,12 @@ export async function getFriendRequests(userId: string): Promise<{ requests: Fri
 // Send friend request
 export async function sendFriendRequest(userId: string, receiverId: string, request: FriendRequest) {
   try {
+    console.log('=== SEND FRIEND REQUEST ===');
+    console.log('Sender (userId):', userId);
+    console.log('Receiver (receiverId):', receiverId);
+    console.log('Request data:', request);
+    console.log('Request photoURL:', request.photoURL);
+    
     // Clean the request data to remove undefined values
     const cleanedRequest = removeUndefined({
       id: request.id,
@@ -385,27 +437,68 @@ export async function sendFriendRequest(userId: string, receiverId: string, requ
       photoURL: request.photoURL,
       status: request.status,
     });
+    
+    console.log('Cleaned request data:', cleanedRequest);
+    console.log('Cleaned request photoURL:', cleanedRequest.photoURL);
 
     // Add to receiver's incoming requests
+    // Path: users/{receiverId}/friendRequests/{userId}
+    // Where userId (sender) is the document ID, receiverId is the collection owner
     const receiverRequestsRef = collection(db, 'users', receiverId, 'friendRequests');
-    await setDoc(doc(receiverRequestsRef, userId), {
-      ...cleanedRequest,
-      sentAt: serverTimestamp(),
-    });
+    const receiverRequestDoc = doc(receiverRequestsRef, userId);
+    console.log('Creating document at path: users/', receiverId, '/friendRequests/', userId);
+    console.log('Authenticated user:', userId, 'Document ID:', userId, 'Match:', userId === userId);
+    try {
+      await setDoc(receiverRequestDoc, {
+        ...cleanedRequest,
+        sentAt: serverTimestamp(),
+      });
+      console.log('Document created successfully');
+    } catch (error: any) {
+      console.error('Error creating friend request document:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      throw error;
+    }
+    
+    // Verify the request was saved with photoURL
+    // Note: This might fail if sender doesn't have read permission, but that's okay
+    try {
+      const verifyDoc = await getDoc(receiverRequestDoc);
+      if (verifyDoc.exists()) {
+        const savedData = verifyDoc.data();
+        console.log('Request saved successfully. Saved data:', savedData);
+        console.log('Saved photoURL:', savedData.photoURL);
+      } else {
+        console.warn('Request was not saved - document does not exist after setDoc');
+      }
+    } catch (verifyError: any) {
+      console.warn('Could not verify document (may not have read permission):', verifyError.message);
+      // This is okay - the document was created, we just can't verify it
+    }
     
     // Add to sender's sent requests
+    console.log('Adding to sender\'s sent requests: users/', userId, '/sentRequests/', receiverId);
     const senderSentRef = collection(db, 'users', userId, 'sentRequests');
-    await setDoc(doc(senderSentRef, receiverId), {
-      id: receiverId,
-      name: request.name,
-      ...removeUndefined({
-        username: request.username,
-        email: request.email,
-        avatar: request.avatar,
-        photoURL: request.photoURL,
-      }),
-      sentAt: serverTimestamp(),
-    });
+    try {
+      await setDoc(doc(senderSentRef, receiverId), {
+        id: receiverId,
+        name: request.name,
+        ...removeUndefined({
+          username: request.username,
+          email: request.email,
+          avatar: request.avatar,
+          photoURL: request.photoURL,
+        }),
+        sentAt: serverTimestamp(),
+      });
+      console.log('Added to sender\'s sent requests successfully');
+    } catch (sentError: any) {
+      console.error('Error adding to sender\'s sent requests:', sentError);
+      console.error('Error code:', sentError.code);
+      console.error('Error message:', sentError.message);
+      throw sentError;
+    }
     
     return { success: true, error: null };
   } catch (error: any) {
@@ -416,51 +509,101 @@ export async function sendFriendRequest(userId: string, receiverId: string, requ
 // Accept friend request
 export async function acceptFriendRequest(userId: string, requesterId: string, requesterData: Friend) {
   try {
-    // Add requester to user's friends
-    await addFriend(userId, requesterData);
+    console.log('=== ACCEPT FRIEND REQUEST ===');
+    console.log('User accepting (userId):', userId);
+    console.log('Requester (requesterId):', requesterId);
+    console.log('Requester data:', requesterData);
     
-    // Add user to requester's friends
-    const currentUser = await getUserProfile(userId);
-    if (currentUser) {
-      await addFriend(requesterId, {
-        id: userId,
-        name: currentUser.displayName || currentUser.email || 'User',
-        email: currentUser.email,
-        ...removeUndefined({
-          username: currentUser.username,
-          photoURL: currentUser.photoURL,
-        }),
-        status: 'Offline',
-      });
+    if (!userId || !requesterId) {
+      console.error('Missing user IDs - userId:', userId, 'requesterId:', requesterId);
+      return { success: false, error: 'Missing user IDs' };
     }
     
+    // Add requester to user's friends (the one accepting)
+    console.log('Step 1: Adding requester to user\'s friends list (users/', userId, '/friends/', requesterId, ')');
+    const addRequesterResult = await addFriend(userId, requesterData);
+    if (!addRequesterResult.success) {
+      console.error('FAILED: Could not add requester to user\'s friends:', addRequesterResult.error);
+      return { success: false, error: `Failed to add friend: ${addRequesterResult.error}` };
+    }
+    console.log('SUCCESS: Requester added to user\'s friends list');
+    
+    // Add user to requester's friends (bidirectional)
+    console.log('Step 2: Adding user to requester\'s friends list (users/', requesterId, '/friends/', userId, ')');
+    const currentUser = await getUserProfile(userId);
+    if (!currentUser) {
+      console.error('FAILED: Could not get current user profile');
+      return { success: false, error: 'Could not get current user profile' };
+    }
+    
+    const userAsFriend: Friend = {
+      id: userId,
+      name: currentUser.displayName || currentUser.email || 'User',
+      email: currentUser.email,
+      ...removeUndefined({
+        username: currentUser.username,
+        photoURL: currentUser.photoURL,
+      }),
+      status: 'Offline',
+    };
+    
+    console.log('User data to add to requester\'s friends:', userAsFriend);
+    const addUserResult = await addFriend(requesterId, userAsFriend);
+    if (!addUserResult.success) {
+      console.error('FAILED: Could not add user to requester\'s friends:', addUserResult.error);
+      // This is critical - if we can't add to requester's friends, the friendship is incomplete
+      return { success: false, error: `Failed to complete friendship: ${addUserResult.error}` };
+    }
+    console.log('SUCCESS: User added to requester\'s friends list');
+    
     // Remove from user's incoming requests
+    console.log('Step 3: Removing from user\'s incoming requests');
     const requestRef = doc(db, 'users', userId, 'friendRequests', requesterId);
     await deleteDoc(requestRef);
+    console.log('SUCCESS: Removed from user\'s incoming requests');
     
     // Remove from requester's sent requests
+    console.log('Step 4: Removing from requester\'s sent requests');
     const sentRequestRef = doc(db, 'users', requesterId, 'sentRequests', userId);
     await deleteDoc(sentRequestRef);
+    console.log('SUCCESS: Removed from requester\'s sent requests');
     
+    console.log('=== FRIEND REQUEST ACCEPTED SUCCESSFULLY ===');
     return { success: true, error: null };
   } catch (error: any) {
+    console.error('ERROR accepting friend request:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Decline friend request
+// Decline friend request (removes from both sides)
 export async function declineFriendRequest(userId: string, requesterId: string) {
   try {
+    console.log('=== DECLINE FRIEND REQUEST ===');
+    console.log('User declining (userId):', userId);
+    console.log('Requester (requesterId):', requesterId);
+    
+    if (!userId || !requesterId) {
+      console.error('Missing user IDs - userId:', userId, 'requesterId:', requesterId);
+      return { success: false, error: 'Missing user IDs' };
+    }
+    
     // Remove from user's incoming requests
+    console.log('Step 1: Removing from user\'s incoming requests');
     const requestRef = doc(db, 'users', userId, 'friendRequests', requesterId);
     await deleteDoc(requestRef);
+    console.log('SUCCESS: Removed from user\'s incoming requests');
     
     // Remove from requester's sent requests
+    console.log('Step 2: Removing from requester\'s sent requests');
     const sentRequestRef = doc(db, 'users', requesterId, 'sentRequests', userId);
     await deleteDoc(sentRequestRef);
+    console.log('SUCCESS: Removed from requester\'s sent requests');
     
+    console.log('=== FRIEND REQUEST DECLINED SUCCESSFULLY ===');
     return { success: true, error: null };
   } catch (error: any) {
+    console.error('Error declining friend request:', error);
     return { success: false, error: error.message };
   }
 }
@@ -490,14 +633,19 @@ export async function getSentRequests(userId: string): Promise<{ requests: Frien
     
     const requests: FriendRequest[] = [];
     snapshot.forEach((doc) => {
+      const data = doc.data();
+      console.log('Sent request document:', doc.id, data);
+      console.log('Sent request photoURL:', data.photoURL);
       requests.push({
         id: doc.id,
-        ...doc.data(),
+        ...data,
       } as FriendRequest);
     });
     
+    console.log('Loaded sent requests:', requests.length, 'requests with photoURLs:', requests.filter(r => r.photoURL).length);
     return { requests, error: null };
   } catch (error: any) {
+    console.error('Error getting sent requests:', error);
     return { requests: [], error: error.message };
   }
 }
