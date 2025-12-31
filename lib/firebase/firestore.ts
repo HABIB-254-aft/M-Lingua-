@@ -275,21 +275,32 @@ export function subscribeToFriends(
   userId: string,
   callback: (friends: Friend[]) => void
 ) {
-  const friendsRef = collection(db, 'users', userId, 'friends');
-  
-  return onSnapshot(friendsRef, (snapshot: QuerySnapshot<DocumentData>) => {
-    const friends: Friend[] = [];
-    snapshot.forEach((doc) => {
-      friends.push({
-        id: doc.id,
-        ...doc.data(),
-      } as Friend);
+  // Check if db is available (Firebase initialized)
+  if (!db) {
+    console.warn('Firestore not initialized, cannot set up friends listener');
+    return () => {}; // Return empty unsubscribe function
+  }
+
+  try {
+    const friendsRef = collection(db, 'users', userId, 'friends');
+    
+    return onSnapshot(friendsRef, (snapshot: QuerySnapshot<DocumentData>) => {
+      const friends: Friend[] = [];
+      snapshot.forEach((doc) => {
+        friends.push({
+          id: doc.id,
+          ...doc.data(),
+        } as Friend);
+      });
+      callback(friends);
+    }, (error) => {
+      console.error('Error listening to friends:', error);
+      callback([]);
     });
-    callback(friends);
-  }, (error) => {
-    console.error('Error listening to friends:', error);
-    callback([]);
-  });
+  } catch (error) {
+    console.error('Error setting up friends listener:', error);
+    return () => {}; // Return empty unsubscribe function
+  }
 }
 
 // Add a friend
