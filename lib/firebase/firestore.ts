@@ -708,6 +708,58 @@ export async function getSentRequests(userId: string): Promise<{ requests: Frien
   }
 }
 
+// Listen to friend requests changes in real-time
+export function subscribeToFriendRequests(
+  userId: string,
+  callback: (requests: FriendRequest[]) => void
+) {
+  if (typeof window === 'undefined' || !db) {
+    console.warn('Firestore DB not initialized for subscribeToFriendRequests during SSR or invalid config.');
+    callback([]);
+    return () => {};
+  }
+  const requestsRef = collection(db, 'users', userId, 'friendRequests');
+  return onSnapshot(requestsRef, (snapshot: QuerySnapshot<DocumentData>) => {
+    const requests: FriendRequest[] = [];
+    snapshot.forEach((doc) => {
+      requests.push({
+        id: doc.id,
+        ...doc.data(),
+      } as FriendRequest);
+    });
+    callback(requests);
+  }, (error) => {
+    console.error('Error listening to friend requests:', error);
+    callback([]);
+  });
+}
+
+// Listen to sent requests changes in real-time
+export function subscribeToSentRequests(
+  userId: string,
+  callback: (requests: FriendRequest[]) => void
+) {
+  if (typeof window === 'undefined' || !db) {
+    console.warn('Firestore DB not initialized for subscribeToSentRequests during SSR or invalid config.');
+    callback([]);
+    return () => {};
+  }
+  const sentRef = collection(db, 'users', userId, 'sentRequests');
+  return onSnapshot(sentRef, (snapshot: QuerySnapshot<DocumentData>) => {
+    const requests: FriendRequest[] = [];
+    snapshot.forEach((doc) => {
+      requests.push({
+        id: doc.id,
+        ...doc.data(),
+      } as FriendRequest);
+    });
+    callback(requests);
+  }, (error) => {
+    console.error('Error listening to sent requests:', error);
+    callback([]);
+  });
+}
+
 // Search users in Firestore
 export interface SearchUserResult {
   id: string;

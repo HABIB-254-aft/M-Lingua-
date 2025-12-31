@@ -1,21 +1,25 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Lexend, Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import Header from "../components/Header";
+import Footer from "../components/Footer";
 import OfflineIndicator from "../components/OfflineIndicator";
 import CacheInitializer from "../components/CacheInitializer";
+import ProductTour from "../components/ProductTour";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { OutputPreferencesProvider } from "../contexts/OutputPreferencesContext";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const lexend = Lexend({
+  variable: "--font-lexend",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -78,9 +82,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+            <body
+              className={`${lexend.variable} ${inter.variable} antialiased`}
+              style={{ fontFamily: 'var(--font-inter)' }}
+            >
         <Script
           id="theme-init"
           strategy="beforeInteractive"
@@ -106,7 +111,11 @@ export default function RootLayout({
             <CacheInitializer />
             <OfflineIndicator />
             <Header />
-            {children}
+            <main className="pb-20">
+              {children}
+            </main>
+            <Footer />
+            <ProductTour />
           </OutputPreferencesProvider>
         </ThemeProvider>
         <Script

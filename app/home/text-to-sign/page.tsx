@@ -267,7 +267,7 @@ export default function TextToSignPage() {
           </label>
           <div
             id="sign-avatar"
-            className="w-full h-96 border-2 border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 overflow-hidden"
+            className="w-full h-96 border-2 border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 overflow-hidden animate-fade-in"
             role="img"
             aria-label="Sign language avatar"
           >

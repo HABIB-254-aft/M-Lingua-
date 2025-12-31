@@ -31,6 +31,40 @@
   animation: fade-in 0.3s ease-out;
 }
 
+/* Smooth opacity transition for data loading */
+.opacity-fade-in {
+  animation: fade-in 0.4s ease-out;
+  opacity: 1;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.animate-ripple {
+  animation: ripple 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
@@ -46,15 +80,50 @@
 }
 
 body {
-  background: #ffffff;
+  background: #F8FAFC;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', 'Lexend', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .dark body {
-  background: #0d1117;
-  color: #c9d1d9;
+  background: #0F172A;
+  color: #F1F5F9;
+}
+
+/* Premium Design System Colors */
+:root {
+  --primary-blue: #3B82F6;
+  --secondary-purple: #8B5CF6;
+  --success-emerald: #10B981;
+  --bg-light: #F8FAFC;
+  --bg-dark: #0F172A;
+}
+
+.dark {
+  --bg-light: #0F172A;
+  --bg-dark: #020617;
+}
+
+/* Glow effect for icons */
+.glow-icon {
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+/* Pulse animation for online status */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+.pulse-online {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Welcome Page Background Animation */

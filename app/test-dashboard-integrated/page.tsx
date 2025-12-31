@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ProfileDrawer from "@/components/ProfileDrawer";
 import FriendsDrawer from "@/components/FriendsDrawer";
@@ -24,336 +24,46 @@ import {
   Activity,
   Clock
 } from "lucide-react";
-import { getCurrentUser } from "@/lib/firebase/auth";
-import { subscribeToFriends, getFriendRequests, getUserPresence } from "@/lib/firebase/firestore";
-import type { Friend } from "@/lib/firebase/firestore";
 
 /**
- * Premium Dashboard Homepage
+ * Premium Dashboard Design - Integrated Version
  * 
- * Combines dashboard design with voice navigation for accessibility
+ * This is what the dashboard would look like when integrated into /home/page.tsx
+ * 
+ * DESIGN SYSTEM:
+ * - Typography: Inter/Lexend
+ * - Primary: #3B82F6 (Electric Blue)
+ * - Secondary: #8B5CF6 (Deep Purple)
+ * - Success: #10B981 (Emerald)
+ * - Background: Light (#F8FAFC), Dark (#0F172A)
+ * - Containers: rounded-2xl, border border-slate-200/50, shadow-sm
  */
-export default function Home() {
-  const router = useRouter();
+export default function TestDashboardIntegrated() {
   const { darkMode } = useTheme();
+  const router = useRouter();
   const [showProfile, setShowProfile] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  // Real data from Firebase
-  const [recentMessages, setRecentMessages] = useState<Array<{ id: string; name: string; lastMessage: string; time: string; unread: number }>>([]);
-  const [recentFriends, setRecentFriends] = useState<Array<{ id: string; name: string; status: string; avatar: string }>>([]);
-  const [friendRequestsCount, setFriendRequestsCount] = useState(0);
-  const [friendsCount, setFriendsCount] = useState(0);
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-  const [recentActivity, setRecentActivity] = useState<Array<{ id: string; icon: any; title: string; time: string; color: string }>>([]);
-  const currentUserIdRef = useRef<string | null>(null);
+  // Mock data for dashboard - can be empty for empty state testing
+  const recentMessages: Array<{ id: string; name: string; lastMessage: string; time: string; unread: number }> = [
+    // { id: "1", name: "John Doe", lastMessage: "Hey, how are you?", time: "2m ago", unread: 2 },
+    // { id: "2", name: "Jane Smith", lastMessage: "See you tomorrow!", time: "1h ago", unread: 0 },
+    // { id: "3", name: "Mike Johnson", lastMessage: "Thanks for the help", time: "3h ago", unread: 5 },
+  ];
 
-  // Voice navigation refs (from original homepage)
-  const recognitionRef = useRef<any | null>(null);
-  const isListeningRef = useRef(false);
-  const isSpeakingRef = useRef(false);
-  const isTypingRef = useRef(false);
-  const typingTimerRef = useRef<number | null>(null);
-  const spokenRef = useRef(false);
-  const speakMessageRef = useRef<((message: string, onEnd?: () => void) => void) | null>(null);
-  const startRecognitionRef = useRef<(() => void) | null>(null);
+  const recentFriends: Array<{ id: string; name: string; status: string; avatar: string }> = [
+    // { id: "1", name: "Sarah Williams", status: "Online", avatar: "S" },
+    // { id: "2", name: "Alex Brown", status: "Offline", avatar: "A" },
+    // { id: "3", name: "Emma Davis", status: "Online", avatar: "E" },
+  ];
 
-  // Load user data and set up Firebase listeners
-  useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const firebaseUser = getCurrentUser();
-        if (firebaseUser) {
-          currentUserIdRef.current = firebaseUser.uid;
-
-          // Set up friends listener
-          const unsubscribeFriends = subscribeToFriends(firebaseUser.uid, async (friends: Friend[]) => {
-            setFriendsCount(friends.length);
-            
-            // Get presence for each friend and format for display
-            const friendsWithPresence = await Promise.all(
-              friends.slice(0, 3).map(async (friend) => {
-                const { presence } = await getUserPresence(friend.id);
-                return {
-                  id: friend.id,
-                  name: friend.name || friend.username || friend.email,
-                  status: presence?.status === 'Online' ? 'Online' : 'Offline',
-                  avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
-                };
-              })
-            );
-            
-            setRecentFriends(friendsWithPresence);
-          });
-
-          // Load friend requests count
-          const requests = await getFriendRequests(firebaseUser.uid);
-          setFriendRequestsCount(requests.length);
-
-          return () => {
-            unsubscribeFriends();
-          };
-        }
-      } catch (error) {
-        console.error('Error loading user data:', error);
-      }
-    };
-
-    loadUserData();
-  }, []);
-
-  // Voice navigation functions (preserved from original homepage)
-  const stopRecognition = useCallback(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.onresult = null;
-          recognitionRef.current.onend = null;
-          recognitionRef.current.onerror = null;
-          recognitionRef.current.stop();
-        } catch (_e) {
-          // ignore
-        }
-      }
-    } finally {
-      recognitionRef.current = null;
-      isListeningRef.current = false;
-    }
-  }, []);
-
-  const clearTypingTimer = useCallback(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (typingTimerRef.current) {
-        window.clearTimeout(typingTimerRef.current as any);
-        typingTimerRef.current = null;
-      }
-    } catch (_e) {}
-  }, []);
-
-  const speakMessage = useCallback((message: string, onEnd?: () => void) => {
-    if (typeof window === "undefined") return;
-    const synth = window.speechSynthesis;
-    if (!synth) return;
-
-    stopRecognition();
-
-    try {
-      try { synth.cancel(); } catch (_e) {}
-      isSpeakingRef.current = true;
-      const u = new SpeechSynthesisUtterance(message);
-      u.lang = "en-US";
-      u.addEventListener("end", () => {
-        isSpeakingRef.current = false;
-        if (onEnd) {
-          onEnd();
-        } else if (!isTypingRef.current && startRecognitionRef.current) {
-          startRecognitionRef.current();
-        }
-      });
-      synth.speak(u);
-    } catch (_e) {
-      isSpeakingRef.current = false;
-      if (!isTypingRef.current && startRecognitionRef.current) {
-        startRecognitionRef.current();
-      }
-    }
-  }, [stopRecognition]);
-
-  const startRecognition = useCallback(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const mode = localStorage.getItem("accessibilityMode");
-      if (mode !== "blind") return;
-    } catch (_e) {
-      return;
-    }
-
-    if (isSpeakingRef.current) return;
-    if (isListeningRef.current) return;
-    if (isTypingRef.current) return;
-
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) return;
-
-    try {
-      const r = new SpeechRec();
-      r.lang = "en-US";
-      r.continuous = false;
-      r.interimResults = false;
-      r.maxAlternatives = 1;
-
-      r.onresult = (ev: any) => {
-        try {
-          const transcript = (ev.results && ev.results[0] && ev.results[0][0] && ev.results[0][0].transcript) || "";
-          const text = transcript.trim().toLowerCase();
-          if (!text) return;
-
-          stopRecognition();
-
-          // Feature navigation
-          if (text.includes("text") && text.includes("speech")) {
-            const textIndex = text.indexOf("text");
-            const speechIndex = text.indexOf("speech");
-            if (textIndex < speechIndex) {
-              router.push("/home/text-to-speech");
-              return;
-            } else {
-              router.push("/home/speech-to-text");
-              return;
-            }
-          }
-
-          if (text.includes("speech text") || text === "speech text") {
-            router.push("/home/speech-to-text");
-            return;
-          }
-
-          if (text.includes("text speech") || text === "text speech") {
-            router.push("/home/text-to-speech");
-            return;
-          }
-
-          if (text.includes("translation") || text.includes("translate")) {
-            router.push("/home/translation");
-            return;
-          }
-
-          if ((text.includes("speech") && text.includes("sign")) || text.includes("speech sign") || text === "speech sign") {
-            router.push("/home/speech-to-sign");
-            return;
-          }
-
-          if ((text.includes("text") && text.includes("sign") && !text.includes("speech")) || text.includes("text sign") || text === "text sign") {
-            router.push("/home/text-to-sign");
-            return;
-          }
-
-          if (text.includes("conversation")) {
-            router.push("/home/conversation-mode");
-            return;
-          }
-
-          // Dashboard navigation
-          if (text.includes("messages") || text.includes("message")) {
-            router.push("/test-chat-layout");
-            return;
-          }
-
-          if (text.includes("friends")) {
-            setShowFriends(true);
-            return;
-          }
-
-          // Help commands
-          if (text.includes("help") || text.includes("repeat")) {
-            const welcomeMessage = "Welcome to M-Lingua dashboard. You have 6 features available: Speech to Text, Text to Speech, Translation, Speech to Sign, Text to Sign, and Conversation Mode. You can also say 'messages' to view messages, or 'friends' to open friends. Say a feature name to open it, or say 'help' or 'repeat' to hear these options again.";
-            if (speakMessageRef.current) {
-              speakMessageRef.current(welcomeMessage, () => {
-                if (startRecognitionRef.current) {
-                  startRecognitionRef.current();
-                }
-              });
-            }
-            return;
-          }
-
-          // If command not recognized
-          const unrecognizedMessage = "Command not recognized. Say 'help' to hear the available commands again.";
-          if (speakMessageRef.current) {
-            speakMessageRef.current(unrecognizedMessage, () => {
-              if (startRecognitionRef.current) {
-                startRecognitionRef.current();
-              }
-            });
-          }
-        } catch (_e) {
-          // ignore
-        }
-      };
-
-      r.onerror = () => {
-        stopRecognition();
-      };
-
-      r.onend = () => {
-        isListeningRef.current = false;
-        recognitionRef.current = null;
-        try {
-          const mode = localStorage.getItem("accessibilityMode");
-          if (mode === "blind" && !isSpeakingRef.current && !isTypingRef.current && startRecognitionRef.current) {
-            setTimeout(() => startRecognitionRef.current!(), 300);
-          }
-        } catch (_e) {
-          // ignore
-        }
-      };
-
-      recognitionRef.current = r;
-      try {
-        r.start();
-        isListeningRef.current = true;
-      } catch (_err) {
-        recognitionRef.current = null;
-        isListeningRef.current = false;
-      }
-    } catch (_e) {
-      // ignore
-    }
-  }, [router, stopRecognition]);
-
-  // Store refs to break circular dependency
-  useEffect(() => {
-    speakMessageRef.current = speakMessage;
-  }, [speakMessage]);
-
-  useEffect(() => {
-    startRecognitionRef.current = startRecognition;
-  }, [startRecognition]);
-
-  // Voice navigation setup
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    
-    spokenRef.current = false;
-
-    let timer: NodeJS.Timeout | null = null;
-    let frameId: number | null = null;
-
-    frameId = requestAnimationFrame(() => {
-      timer = setTimeout(() => {
-        try {
-          const mode = localStorage.getItem("accessibilityMode");
-          if (mode === "blind" && !spokenRef.current && speakMessageRef.current) {
-            spokenRef.current = true;
-            const welcomeMessage = "Welcome to M-Lingua dashboard. You have 6 features available: Speech to Text, Text to Speech, Translation, Speech to Sign, Text to Sign, and Conversation Mode. You can also say 'messages' to view messages, or 'friends' to open friends. Say a feature name to open it, or say 'help' or 'repeat' to hear these options again.";
-            speakMessageRef.current(welcomeMessage, () => {
-              if (startRecognitionRef.current) {
-                startRecognitionRef.current();
-              }
-            });
-          }
-        } catch (e) {
-          // fail silently
-        }
-      }, 200);
-    });
-
-    return () => {
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId);
-      }
-      if (timer) {
-        clearTimeout(timer);
-      }
-      stopRecognition();
-      try { clearTypingTimer(); } catch (_e) {}
-      isTypingRef.current = false;
-    };
-  }, [stopRecognition, clearTypingTimer, speakMessage, startRecognition]);
+  const recentActivity: Array<{ id: string; icon: any; title: string; time: string; color: string }> = [
+    // { id: "1", icon: Mic, title: "Speech to Text conversion", time: "5 minutes ago", color: "blue" },
+    // { id: "2", icon: Languages, title: "Translation completed", time: "1 hour ago", color: "emerald" },
+    // { id: "3", icon: Hand, title: "Sign language animation created", time: "2 hours ago", color: "purple" },
+  ];
 
   const communicationFeatures = [
     { 
@@ -409,7 +119,7 @@ export default function Home() {
   const stats = [
     { 
       label: "Unread Messages", 
-      value: (unreadMessagesCount ?? 0).toString(), 
+      value: "7", 
       icon: MessageSquare, 
       color: "blue",
       bgColor: darkMode ? "bg-blue-500/10" : "bg-blue-50",
@@ -417,7 +127,7 @@ export default function Home() {
     },
     { 
       label: "Friends", 
-      value: (friendsCount ?? 0).toString(), 
+      value: "12", 
       icon: Users, 
       color: "emerald",
       bgColor: darkMode ? "bg-emerald-500/10" : "bg-emerald-50",
@@ -425,7 +135,7 @@ export default function Home() {
     },
     { 
       label: "Friend Requests", 
-      value: (friendRequestsCount ?? 0).toString(), 
+      value: "2", 
       icon: UserPlus, 
       color: "orange",
       bgColor: darkMode ? "bg-orange-500/10" : "bg-orange-50",
@@ -443,10 +153,12 @@ export default function Home() {
 
   return (
     <>
+      {/* NOTE: Header and Footer are provided by layout.tsx - not included here */}
+      
       {/* Main Content - Premium Dashboard */}
       <div className={`min-h-screen ${darkMode ? 'bg-slate-950' : 'bg-slate-50'} transition-colors`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Welcome Hero Card */}
+          {/* Welcome Hero Card with Mesh Gradient */}
           <div className={`mb-8 p-8 rounded-2xl border ${darkMode ? 'border-slate-800/50' : 'border-slate-200/50'} shadow-sm ${
             darkMode 
               ? 'bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-transparent' 
@@ -460,7 +172,7 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Stats Grid */}
+          {/* Stats Grid with Glow Icons */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             {stats.map((stat, index) => {
               const IconComponent = stat.icon;
@@ -555,11 +267,8 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Quick Access Features */}
-              <div 
-                data-tour="quick-access"
-                className={`rounded-2xl border ${darkMode ? 'border-slate-800/50 bg-slate-900/50' : 'border-slate-200/50 bg-white'} shadow-sm p-6`}
-              >
+              {/* Quick Access Features - Vertical Icon Stacks */}
+              <div className={`rounded-2xl border ${darkMode ? 'border-slate-800/50 bg-slate-900/50' : 'border-slate-200/50 bg-white'} shadow-sm p-6`}>
                 <h2 className={`text-xl font-bold mb-6 ${darkMode ? 'text-slate-100' : 'text-slate-900'}`} style={{ fontFamily: 'var(--font-lexend)' }}>
                   Quick Access
                 </h2>

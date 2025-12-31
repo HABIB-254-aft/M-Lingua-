@@ -32,6 +32,10 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [sentRequests, setSentRequests] = useState<any[]>([]);
   const friendPresenceUnsubscribersRef = useRef<Map<string, () => void>>(new Map());
+  const friendsListenerSetupRef = useRef<boolean>(false);
+  const friendsUnsubscribeRef = useRef<(() => void) | null>(null);
+  const loadFriendsDataRef = useRef<(() => Promise<void>) | null>(null);
+  const loadUnreadCountsRef = useRef<(() => void) | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -510,6 +514,9 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     }
   }, [currentUser?.id]);
 
+  // Store latest version in ref
+  loadUnreadCountsRef.current = loadUnreadCounts;
+
   const loadFriendsData = useCallback(async (): Promise<void> => {
     try {
       const firebaseUser = getCurrentUser();
@@ -570,7 +577,9 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       }
 
       // Load unread message counts
-      loadUnreadCounts();
+      if (loadUnreadCountsRef.current) {
+        loadUnreadCountsRef.current();
+      }
 
       // Load groups (still using localStorage for now)
       if (userId) {
@@ -590,6 +599,9 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       }
     }
   }, [currentUser?.id, loadUnreadCounts]);
+
+  // Store latest version in ref
+  loadFriendsDataRef.current = loadFriendsData;
 
   // Create new group
   const handleCreateGroup = () => {
@@ -719,8 +731,13 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
 
     // Set up real-time listener for friends changes (when using Firebase)
     // This ensures friends list updates immediately when someone accepts your request
-    let unsubscribeFriends: (() => void) | null = null;
     const setupFriendsListener = async () => {
+      // Prevent multiple setups
+      if (friendsListenerSetupRef.current) {
+        console.log('Friends listener already set up, skipping...');
+        return;
+      }
+      
       // Wait for currentUser to be loaded
       let attempts = 0;
       while ((!currentUser?.id && !getCurrentUser()?.uid) && attempts < 10) {
@@ -731,19 +748,22 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       const firebaseUser = getCurrentUser();
       const userId = firebaseUser?.uid || currentUser?.id;
       
-      if (userId) {
+      if (userId && !friendsListenerSetupRef.current) {
         try {
           console.log('Setting up friends listener for user:', userId);
+          friendsListenerSetupRef.current = true;
+          
           // Unsubscribe from any existing listener first
-          if (unsubscribeFriends) {
+          if (friendsUnsubscribeRef.current) {
             try {
-              unsubscribeFriends();
+              friendsUnsubscribeRef.current();
+              friendsUnsubscribeRef.current = null;
             } catch (e) {
               console.warn('Error unsubscribing from previous listener:', e);
             }
           }
           
-          unsubscribeFriends = subscribeToFriends(userId, (updatedFriends) => {
+          friendsUnsubscribeRef.current = subscribeToFriends(userId, (updatedFriends) => {
             console.log('Friends list updated via real-time listener:', updatedFriends.length, updatedFriends);
             
             // Clean up old presence listeners
@@ -757,7 +777,8 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             friendPresenceUnsubscribersRef.current.clear();
             
             // Set up presence listeners for each friend to update their status in real-time
-            updatedFriends.forEach(async (friend: any) => {
+            // Use Promise.all to handle async operations properly
+            Promise.all(updatedFriends.map(async (friend: any) => {
               // First, try to get the current presence status immediately
               try {
                 const { getUserPresence } = await import("@/lib/firebase/firestore");
@@ -784,7 +805,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               // This listens to the FRIEND's presence document, not the current user's
               // When the friend goes online/offline, only their status in this user's friends list updates
               // The current user's own presence is not affected
-              const unsub = subscribeToUserPresence(friend.id, async (presence) => {
+              const unsub = subscribeToUserPresence(friend.id, (presence) => {
                 if (presence) {
                   console.log(`Friend ${friend.id} presence updated: ${presence.status} (this only affects their status in the friends list)`);
                   // Update friend's status in the friends list (does not affect current user's presence)
@@ -796,18 +817,8 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                     )
                   );
                   
-                  // Also update the friend document in Firestore to persist the status
-                  try {
-                    const firebaseUser = getCurrentUser();
-                    if (firebaseUser) {
-                      await addFriend(firebaseUser.uid, {
-                        ...friend,
-                        status: presence.status,
-                      });
-                    }
-                  } catch (error) {
-                    console.warn('Could not update friend status in Firestore:', error);
-                  }
+                  // DO NOT update Firestore here - this causes infinite loops
+                  // The status is already in Firestore from the presence collection
                 } else {
                   // If presence is null, set status to Offline
                   console.log('Friend presence is null, setting to Offline:', friend.id);
@@ -822,6 +833,8 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               });
               
               friendPresenceUnsubscribersRef.current.set(friend.id, unsub);
+            })).catch((error) => {
+              console.error('Error setting up presence listeners:', error);
             });
             
             setFriends(updatedFriends);
@@ -834,7 +847,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
           });
           console.log('Friends real-time listener set up successfully for user:', userId);
           
-          // Set current user as online
+          // Set current user as online (only once when listener is first set up)
           try {
             await setUserPresence(userId, 'Online');
             console.log('Set user presence to Online');
@@ -843,20 +856,25 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
           }
         } catch (error) {
           console.error('Error setting up friends listener:', error);
+          friendsListenerSetupRef.current = false; // Reset on error
         }
       } else {
         console.warn('Cannot set up friends listener: User ID not available. Firebase user:', firebaseUser, 'Current user:', currentUser);
       }
     };
     
-    // Load friends data first, then set up listener
-    loadFriendsData().then(() => {
-      setupFriendsListener();
-    });
+    // Load friends data first, then set up listener (only if not already set up)
+    if (!friendsListenerSetupRef.current && loadFriendsDataRef.current) {
+      loadFriendsDataRef.current().then(() => {
+        setupFriendsListener();
+      });
+    }
 
     // Listen for unread count updates
     const handleUnreadUpdate = () => {
-      loadUnreadCounts();
+      if (loadUnreadCountsRef.current) {
+        loadUnreadCountsRef.current();
+      }
     };
     window.addEventListener('unreadCountUpdated', handleUnreadUpdate);
 
@@ -879,14 +897,28 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       clearTypingTimer();
       stopVoiceRecognition();
       window.removeEventListener('unreadCountUpdated', handleUnreadUpdate);
+      // Reset listener setup flag
+      friendsListenerSetupRef.current = false;
+      
       // Unsubscribe from friends listener
-      if (unsubscribeFriends) {
+      if (friendsUnsubscribeRef.current) {
         try {
-          unsubscribeFriends();
+          friendsUnsubscribeRef.current();
+          friendsUnsubscribeRef.current = null;
         } catch (error) {
           console.error('Error unsubscribing from friends listener:', error);
         }
       }
+      
+      // Clean up all presence listeners
+      friendPresenceUnsubscribersRef.current.forEach((unsub) => {
+        try {
+          unsub();
+        } catch (e) {
+          console.warn('Error unsubscribing from friend presence during cleanup:', e);
+        }
+      });
+      friendPresenceUnsubscribersRef.current.clear();
       // Unsubscribe from all friend presence listeners
       friendPresenceUnsubscribersRef.current.forEach((unsub) => {
         try {
@@ -904,7 +936,10 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
         }
       }
     };
-  }, [isOpen, onClose, router, speakMessage, stopVoiceRecognition, clearTypingTimer, friends.length, friendRequests.length, sentRequests.length, loadUnreadCounts, loadFriendsData]);
+  }, [isOpen, onClose, router, speakMessage, stopVoiceRecognition, clearTypingTimer, friends.length, friendRequests.length, sentRequests.length]);
+  // Note: loadUnreadCounts and loadFriendsData are intentionally NOT in dependencies
+  // to prevent infinite loops. They are useCallbacks that depend on currentUser?.id
+  // which would cause this effect to run repeatedly.
 
   // Announce when profile opens
   useEffect(() => {
@@ -1408,7 +1443,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Friends</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {friends.length} friend{friends.length !== 1 ? 's' : ''} • {friendRequests.length} request{friendRequests.length !== 1 ? 's' : ''}
+                  {friends.length} friend{friends.length !== 1 ? 's' : ''}
                 </p>
               </div>
             </div>
@@ -1433,8 +1468,6 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               <span>Create Group</span>
             </button>
           </div>
-
-          {/* Search and Add Friend Section */}
           <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="relative mb-3">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1816,95 +1849,6 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             )}
           </section>
 
-          {/* Friend Requests */}
-          <section className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                Friend Requests
-                {friendRequests.length > 0 && (
-                  <span className="px-2 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 text-xs font-medium rounded-full">
-                    {friendRequests.length}
-                  </span>
-                )}
-              </h3>
-            </div>
-            {friendRequests.length > 0 ? (
-              <div className="space-y-2">
-                {friendRequests.map((request: any) => {
-                  // Debug logging
-                  if (request.photoURL) {
-                    console.log('Rendering friend request with photoURL:', request.id, request.photoURL);
-                  } else {
-                    console.log('Friend request has NO photoURL:', request.id, request);
-                  }
-                  
-                  return (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0 overflow-hidden">
-                        {request.photoURL ? (
-                          <img
-                            src={request.photoURL}
-                            alt={request.name || "User"}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              console.error('Image failed to load:', request.photoURL, e);
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              if (target.parentElement) {
-                                target.parentElement.innerHTML = (request.avatar || request.name || "U").charAt(0).toUpperCase();
-                              }
-                            }}
-                            onLoad={() => {
-                              console.log('Image loaded successfully:', request.photoURL);
-                            }}
-                          />
-                        ) : (
-                          request.avatar || (request.name || "U").charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {request.name}
-                        </div>
-                        {request.username && (
-                          <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                            @{request.username}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2 flex-shrink-0 ml-2">
-                      <button
-                        type="button"
-                        onClick={() => handleAcceptRequest(request)}
-                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors shadow-sm"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeclineRequest(request)}
-                        className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-600 focus-visible:ring-offset-2 transition-colors"
-                      >
-                        Decline
-                      </button>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="p-6 text-center bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-3xl mb-2">📬</div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">No friend requests</p>
-              </div>
-            )}
-          </section>
-
           {/* Groups Section */}
           {groups.length > 0 && (
             <section className="mb-6">
@@ -1952,76 +1896,6 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
               </div>
             </section>
           )}
-
-          {/* Sent Requests */}
-          <section className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                Sent Requests
-                {sentRequests.length > 0 && (
-                  <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-full">
-                    {sentRequests.length}
-                  </span>
-                )}
-              </h3>
-            </div>
-            {sentRequests.length > 0 ? (
-              <div className="space-y-2">
-                {sentRequests.map((request: any) => (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:shadow-md transition-all"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center text-white font-bold text-lg shadow-sm flex-shrink-0 overflow-hidden">
-                        {request.photoURL ? (
-                          <img
-                            src={request.photoURL}
-                            alt={request.name || "User"}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              if (target.parentElement) {
-                                target.parentElement.innerHTML = (request.avatar || request.name || "U").charAt(0).toUpperCase();
-                              }
-                            }}
-                          />
-                        ) : (
-                          request.avatar || (request.name || "U").charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {request.name}
-                        </div>
-                        {request.username && (
-                          <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                            @{request.username}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                          Pending
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCancelSentRequest(request)}
-                      className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-600 focus-visible:ring-offset-2 transition-colors flex-shrink-0 ml-2"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-6 text-center bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-3xl mb-2">📤</div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">No sent requests</p>
-              </div>
-            )}
-          </section>
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import OutputFormatToggles from "@/components/OutputFormatToggles";
 import SignLanguageAvatar from "../SignLanguageAvatar";
 import { useAdaptiveUI } from "@/hooks/useAdaptiveUI";
 import CollapsibleSection from "@/components/CollapsibleSection";
+import SkeletonText from "@/components/SkeletonText";
 
 export default function TranslationPage() {
   const router = useRouter();
@@ -23,6 +24,7 @@ export default function TranslationPage() {
   const [detectionConfidence, setDetectionConfidence] = useState<number>(0);
   const [isDetecting, setIsDetecting] = useState(false);
   const [autoDetectEnabled, setAutoDetectEnabled] = useState(true);
+  const [showSuccessFeedback, setShowSuccessFeedback] = useState(false);
   const detectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Voice navigation refs
@@ -152,6 +154,11 @@ export default function TranslationPage() {
       navigator.clipboard.writeText(outputText).catch(() => {
         // ignore
       });
+      // Show success feedback
+      setShowSuccessFeedback(true);
+      setTimeout(() => {
+        setShowSuccessFeedback(false);
+      }, 1000);
     }
   };
 
@@ -543,14 +550,26 @@ export default function TranslationPage() {
                 icon="🌐"
                 defaultOpen={true}
               >
-                <textarea
-                  id="translation-output"
-                  aria-label="Translation:"
-                  readOnly
-                  value={outputText}
-                  placeholder="Translation will appear here..."
-                  className={`w-full ${adaptiveUI.isMobile ? 'h-40' : 'h-60'} px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize`}
-                />
+                <div className="relative">
+                  {isTranslating ? (
+                    <div className={`w-full ${adaptiveUI.isMobile ? 'h-40' : 'h-60'} px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 flex items-center`}>
+                      <SkeletonText lines={5} className="w-full" />
+                    </div>
+                  ) : (
+                    <textarea
+                      id="translation-output"
+                      aria-label="Translation:"
+                      readOnly
+                      value={outputText}
+                      placeholder="Translation will appear here..."
+                      className={`w-full ${adaptiveUI.isMobile ? 'h-40' : 'h-60'} px-4 py-4 border-2 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 resize transition-all duration-300 ${
+                        showSuccessFeedback 
+                          ? 'border-green-500 dark:border-green-400 ring-2 ring-green-500/20 dark:ring-green-400/20' 
+                          : 'border-gray-300 dark:border-gray-700'
+                      }`}
+                    />
+                  )}
+                </div>
               </CollapsibleSection>
             )}
 
@@ -564,9 +583,15 @@ export default function TranslationPage() {
                 <div className="border border-gray-200 dark:border-gray-700 rounded-sm overflow-hidden bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
                   <div 
                     id="translation-sign-avatar-container" 
-                    className={`${adaptiveUI.isMobile ? 'h-32' : adaptiveUI.isTablet ? 'h-40' : 'h-60'} w-full`}
+                    className={`${adaptiveUI.isMobile ? 'h-32' : adaptiveUI.isTablet ? 'h-40' : 'h-60'} w-full animate-fade-in`}
                   >
-                    <SignLanguageAvatar text={outputText} speed={1} containerId="translation-sign-avatar-container" />
+                    {isTranslating ? (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <SkeletonText lines={3} className="w-3/4" />
+                      </div>
+                    ) : (
+                      <SignLanguageAvatar text={outputText} speed={1} containerId="translation-sign-avatar-container" />
+                    )}
                   </div>
                   <div className="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-300 text-center">
                     Sign Language

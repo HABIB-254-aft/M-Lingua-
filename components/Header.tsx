@@ -4,23 +4,22 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "../contexts/ThemeContext";
-import SettingsDrawer from "./SettingsDrawer";
 import ProfileDrawer from "./ProfileDrawer";
-import FriendsDrawer from "./FriendsDrawer";
+import FriendRequestsDrawer from "./FriendRequestsDrawer";
 import InstallButton from "./InstallButton";
 import { onAuthStateChange, getCurrentUser } from "@/lib/firebase/auth";
-import { getUserProfile, setUserPresence } from "@/lib/firebase/firestore";
+import { getUserProfile, setUserPresence, getFriendRequests } from "@/lib/firebase/firestore";
 import { offlineDetector } from "@/lib/offline-detector";
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showFriends, setShowFriends] = useState(false);
+  const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [friendRequestsCount, setFriendRequestsCount] = useState(0);
   const currentUserIdRef = useRef<string | null>(null);
   const pendingPresenceUpdateRef = useRef<'Online' | 'Offline' | null>(null);
   const { darkMode, toggleDarkMode } = useTheme();
@@ -93,8 +92,14 @@ export default function Header() {
             photoURL: profile.photoURL || firebaseUser.photoURL,
           });
           
-          // Set user as online when authenticated (with retry on failure)
+          // Set user as online when authenticated (with retry on failure, but limit retries)
+          let retryCount = 0;
+          const maxRetries = 3;
           const setPresence = async () => {
+            if (retryCount >= maxRetries) {
+              console.warn('Max retries reached for setting user presence');
+              return;
+            }
             try {
               const { setUserPresence } = await import("@/lib/firebase/firestore");
               const result = await setUserPresence(firebaseUser.uid, 'Online');
@@ -102,13 +107,19 @@ export default function Header() {
                 console.log('User presence set to Online');
               } else {
                 console.warn('Failed to set user presence:', result.error);
-                // Retry after a short delay
-                setTimeout(setPresence, 1000);
+                // Retry after a short delay, but limit retries
+                retryCount++;
+                if (retryCount < maxRetries) {
+                  setTimeout(setPresence, 1000);
+                }
               }
             } catch (error) {
               console.warn('Could not set user presence:', error);
-              // Retry after a short delay
-              setTimeout(setPresence, 1000);
+              // Retry after a short delay, but limit retries
+              retryCount++;
+              if (retryCount < maxRetries) {
+                setTimeout(setPresence, 1000);
+              }
             }
           };
           setPresence();
@@ -181,11 +192,13 @@ export default function Header() {
         // If we just came back online and there's a pending update, retry it
         if (status.isOnline && pendingPresenceUpdateRef.current) {
           console.log('Connection restored - retrying pending presence update...');
-          setTimeout(async () => {
+          const timeoutId = setTimeout(async () => {
             if (pendingPresenceUpdateRef.current) {
               await updatePresence();
             }
           }, 1000); // Wait 1 second for connection to stabilize
+          // Store timeout ID for cleanup if needed (though this is in a subscription callback)
+          // Note: This timeout will complete or be cleared when component unmounts
         }
       }
     });
@@ -207,6 +220,43 @@ export default function Header() {
       window.removeEventListener("focus", checkAuth);
     };
   }, []); // Only run on mount
+
+  // Load friend requests count
+  useEffect(() => {
+    const loadFriendRequestsCount = async () => {
+      try {
+        const firebaseUser = getCurrentUser();
+        if (firebaseUser) {
+          const { requests, error } = await getFriendRequests(firebaseUser.uid);
+          if (!error) {
+            setFriendRequestsCount(requests.length);
+          }
+        } else {
+          // Fallback to localStorage
+          const authData = localStorage.getItem("mlingua_auth");
+          if (authData) {
+            const userData = JSON.parse(authData);
+            const requestsData = localStorage.getItem(`mlingua_friend_requests_${userData.id}`);
+            const requests = requestsData ? JSON.parse(requestsData) : [];
+            setFriendRequestsCount(requests.length);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading friend requests count:", error);
+      }
+    };
+
+    if (isAuthenticated) {
+      loadFriendRequestsCount();
+      // Refresh count every 30 seconds (but not too frequently to avoid memory issues)
+      const interval = setInterval(() => {
+        loadFriendRequestsCount();
+      }, 30000);
+      return () => {
+        clearInterval(interval);
+      };
+    }
+  }, [isAuthenticated]);
 
   // Re-check auth when pathname changes (e.g., after login)
   useEffect(() => {
@@ -246,7 +296,7 @@ export default function Header() {
 
   return (
     <>
-      <header role="banner" className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
+            <header role="banner" className={`${darkMode ? 'bg-slate-900/80 backdrop-blur-md' : 'bg-white/80 backdrop-blur-md'} border-b ${darkMode ? 'border-slate-800/50' : 'border-slate-200/50'} sticky top-0 z-50 shadow-sm`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 md:h-20">
             {/* Logo */}
@@ -266,20 +316,9 @@ export default function Header() {
             </div>
 
             {/* Header Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-tour="profile-header">
               {/* Install Button */}
               <InstallButton />
-
-              {/* Settings Button */}
-              <button
-                type="button"
-                onClick={() => setShowSettings(true)}
-                className="w-10 h-10 flex items-center justify-center bg-blue-600 text-white rounded border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors hover:bg-blue-700"
-                aria-label="Open Settings"
-                title="Settings"
-              >
-                <span className="text-lg">⚙️</span>
-              </button>
 
               {/* Login/User Auth Button */}
               <div className="relative">
@@ -318,22 +357,29 @@ export default function Header() {
                 )}
               </div>
 
-              {/* Friends Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (isAuthenticated) {
-                    setShowFriends(true);
-                  } else {
-                    router.push("/login");
-                  }
-                }}
-                className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
-                aria-label="Friends"
-                title="Friends"
-              >
-                <span className="text-lg">👥</span>
-              </button>
+              {/* Friend Requests Button */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isAuthenticated) {
+                      setShowFriendRequests(true);
+                    } else {
+                      router.push("/login");
+                    }
+                  }}
+                  className="w-10 h-10 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 relative"
+                  aria-label="Friend Requests"
+                  title="Friend Requests"
+                >
+                  <span className="text-lg">👥</span>
+                  {friendRequestsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                      {friendRequestsCount > 9 ? '9+' : friendRequestsCount}
+                    </span>
+                  )}
+                </button>
+              </div>
 
               {/* Dark Mode Toggle */}
               <button
@@ -350,9 +396,8 @@ export default function Header() {
           </div>
         </div>
       </header>
-      <SettingsDrawer isOpen={showSettings} onClose={() => setShowSettings(false)} />
       <ProfileDrawer isOpen={showProfile} onClose={() => setShowProfile(false)} />
-      <FriendsDrawer isOpen={showFriends} onClose={() => setShowFriends(false)} />
+      <FriendRequestsDrawer isOpen={showFriendRequests} onClose={() => setShowFriendRequests(false)} />
     </>
   );
 }

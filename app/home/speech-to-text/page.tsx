@@ -633,30 +633,36 @@ export default function SpeechToTextPage() {
 
         <div className="flex items-center gap-4 mb-4">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Speech to Text</h1>
-          <button
-            type="button"
-            onClick={isRecording ? stopRecording : startRecording}
-            className={`inline-flex items-center gap-2 px-6 py-3 font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 ${
-              isRecording
-                ? "bg-gray-800 text-white"
-                : "bg-blue-600 text-white"
-            }`}
-            aria-label={isRecording ? "Stop recording" : "Start recording"}
-          >
-            {isRecording ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-300">
-                <rect x="6" y="6" width="12" height="12"></rect>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-            )}
-            {isRecording ? "Stop Recording" : "Start Recording"}
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`relative inline-flex items-center gap-2 px-6 py-3 font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 z-10 ${
+                isRecording
+                  ? "bg-red-600 text-white"
+                  : "bg-blue-600 text-white"
+              }`}
+              aria-label={isRecording ? "Stop recording" : "Start recording"}
+            >
+              {isRecording ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                    <rect x="6" y="6" width="12" height="12"></rect>
+                  </svg>
+                  {/* Red pulse effect */}
+                  <span className="absolute inset-0 rounded-sm bg-red-500 animate-ripple opacity-75"></span>
+                </>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+              )}
+              {isRecording ? "Stop Recording" : "Start Recording"}
+            </button>
+          </div>
         </div>
 
         <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-sm p-6 mb-6">
@@ -735,14 +741,21 @@ export default function SpeechToTextPage() {
           </div>
         )}
 
-        <textarea
-          id="stt-output"
-          aria-label="Transcribed text will appear here:"
-          readOnly
-          value={transcript}
-          placeholder="Transcribed text will appear here..."
-          className="w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic resize"
-        />
+        <div className={`relative transition-all duration-300 ${isRecording ? 'ring-2 ring-red-500/50 ring-offset-2 dark:ring-offset-gray-900 rounded-sm' : ''}`}>
+          <textarea
+            id="stt-output"
+            aria-label="Transcribed text will appear here:"
+            readOnly
+            value={transcript}
+            placeholder="Transcribed text will appear here..."
+            className={`w-full h-60 px-4 py-4 border-2 border-gray-300 dark:border-gray-700 rounded-sm focus-visible:outline-none focus-visible:border-blue-500 text-slate-900 dark:text-gray-100 dark:bg-gray-800 placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic resize transition-all duration-300 ${
+              isRecording ? 'bg-red-50/30 dark:bg-red-900/10 border-red-300 dark:border-red-700' : ''
+            }`}
+          />
+          {isRecording && (
+            <div className="absolute inset-0 pointer-events-none rounded-sm bg-gradient-to-br from-red-500/10 to-transparent"></div>
+          )}
+        </div>
 
         <div className="flex items-center gap-3 mt-4">
           <button
