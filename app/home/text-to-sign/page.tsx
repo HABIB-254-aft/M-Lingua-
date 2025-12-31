@@ -8,6 +8,7 @@ export default function TextToSignPage() {
   const router = useRouter();
   const [text, setText] = useState("");
   const [signSpeed, setSignSpeed] = useState(1);
+  const [replayKey, setReplayKey] = useState(0);
   
   // Voice navigation refs
   const voiceRecognitionRef = useRef<any | null>(null);
@@ -17,8 +18,18 @@ export default function TextToSignPage() {
   const convertBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const convertToSign = () => {
-    // The sign animation will be triggered by the text state change
-    // This function is here for future enhancement
+    // Force re-render of sign language avatar
+    setReplayKey(prev => prev + 1);
+  };
+
+  const copyText = () => {
+    if (text) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  };
+
+  const replaySign = () => {
+    setReplayKey(prev => prev + 1);
   };
 
   // Voice navigation functions
@@ -267,6 +278,7 @@ export default function TextToSignPage() {
           </label>
           <div
             id="sign-avatar"
+            key={`sign-${replayKey}-${text}-${signSpeed}`}
             className="w-full h-96 border-2 border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 overflow-hidden animate-fade-in"
             role="img"
             aria-label="Sign language avatar"
@@ -291,7 +303,9 @@ export default function TextToSignPage() {
             <span id="sign-speed-value" className="text-sm text-gray-700 dark:text-gray-300 w-12">{signSpeed.toFixed(1)}x</span>
             <button
               type="button"
-              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+              onClick={replaySign}
+              disabled={!text.trim()}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Replay sign language"
             >
               Replay

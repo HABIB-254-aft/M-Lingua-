@@ -32,6 +32,9 @@ export default function TextToSpeechPage() {
         if (typeof window !== "undefined" && window.speechSynthesis) {
           window.speechSynthesis.cancel();
         }
+        setIsPlaying(false);
+        setIsPaused(false);
+        setCurrentUtterance(null);
       } catch {
         // ignore
       }
@@ -42,6 +45,10 @@ export default function TextToSpeechPage() {
   // selected voice and speed
   const [selectedVoice, setSelectedVoice] = useState("microsoft-zira");
   const [speed, setSpeed] = useState("1");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentUtterance, setCurrentUtterance] = useState<SpeechSynthesisUtterance | null>(null);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Voice navigation functions
   const stopVoiceRecognition = useCallback(() => {
@@ -236,6 +243,142 @@ export default function TextToSpeechPage() {
     };
   }, [startVoiceRecognition, stopVoiceRecognition]);
 
+  const speakText = () => {
+    if (!text.trim() || typeof window === "undefined") return;
+
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      alert("Speech synthesis is not supported in your browser.");
+      return;
+    }
+
+    // Cancel any ongoing speech
+    synth.cancel();
+    setIsPlaying(false);
+    setIsPaused(false);
+
+    // Create new utterance
+    const utterance = new SpeechSynthesisUtterance(text.trim());
+    
+    // Map voice selection to actual voice
+    const voices = synth.getVoices();
+    const voiceMap: Record<string, string> = {
+      "microsoft-david": "Microsoft David - English (United States)",
+      "microsoft-mark": "Microsoft Mark - English (United States)",
+      "microsoft-zira": "Microsoft Zira - English (United States)",
+      "google-de": "Google Deutsch",
+      "google-us": "Google US English",
+      "google-uk-female": "Google UK English Female",
+      "google-uk-male": "Google UK English Male",
+      "google-es": "Google español",
+      "google-es-us": "Google español de Estados Unidos",
+      "google-fr": "Google français",
+      "google-hi": "Google हिंदी",
+      "google-id": "Google Bahasa Indonesia",
+      "google-it": "Google italiano",
+      "google-ja": "Google 日本語",
+      "google-ko": "Google 한국어",
+      "google-nl": "Google Nederlands",
+      "google-pl": "Google polski",
+      "google-pt-br": "Google português do Brasil",
+      "google-ru": "Google русский",
+      "google-zh-cn": "Google 普通话（中国大陆）",
+      "google-zh-hk": "Google 粤語（香港）",
+    };
+
+    const voiceName = voiceMap[selectedVoice] || "Microsoft Zira - English (United States)";
+    const selectedVoiceObj = voices.find(v => v.name.includes(voiceName.split(" - ")[0]));
+    if (selectedVoiceObj) {
+      utterance.voice = selectedVoiceObj;
+    }
+
+    utterance.rate = parseFloat(speed);
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+      setIsPlaying(true);
+      setIsPaused(false);
+    };
+
+    utterance.onend = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setCurrentUtterance(null);
+    };
+
+    utterance.onerror = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setCurrentUtterance(null);
+    };
+
+    setCurrentUtterance(utterance);
+    synth.speak(utterance);
+  };
+
+  const pauseSpeech = () => {
+    if (typeof window === "undefined") return;
+    const synth = window.speechSynthesis;
+    if (synth && isPlaying && !isPaused) {
+      synth.pause();
+      setIsPaused(true);
+    }
+  };
+
+  const resumeSpeech = () => {
+    if (typeof window === "undefined") return;
+    const synth = window.speechSynthesis;
+    if (synth && isPaused) {
+      synth.resume();
+      setIsPaused(false);
+    }
+  };
+
+  const stopSpeech = () => {
+    if (typeof window === "undefined") return;
+    const synth = window.speechSynthesis;
+    if (synth) {
+      synth.cancel();
+      setIsPlaying(false);
+      setIsPaused(false);
+      setCurrentUtterance(null);
+    }
+  };
+
+  const saveAudio = async () => {
+    if (!text.trim()) {
+      alert("No text to save as audio");
+      return;
+    }
+
+    try {
+      // Note: Browser TTS doesn't support direct audio file generation
+      // This is a limitation - we'll save the text and settings instead
+      const audioData = {
+        text: text,
+        voice: selectedVoice,
+        speed: speed,
+        timestamp: new Date().toLocaleString(),
+      };
+
+      const stored = localStorage.getItem("textToSpeechHistory");
+      const history = stored ? JSON.parse(stored) : [];
+      history.unshift(audioData);
+      
+      const limitedHistory = history.slice(0, 100);
+      localStorage.setItem("textToSpeechHistory", JSON.stringify(limitedHistory));
+      
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+      
+      alert("Note: Direct audio file download is not supported by browser TTS. Text and settings have been saved. For audio files, consider using a server-side TTS service.");
+    } catch (error) {
+      console.error("Error saving audio data:", error);
+      alert("Failed to save");
+    }
+  };
+
   return (
     <main id="main-content" className="min-h-screen bg-white dark:bg-gray-900 pt-12 flex items-start justify-center">
       <div className="w-full max-w-4xl mx-auto px-6 text-left">
@@ -317,6 +460,86 @@ export default function TextToSpeechPage() {
             </select>
           </div>
         </div>
+
+        {/* Playback Controls */}
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
+          {!isPlaying ? (
+            <button
+              type="button"
+              onClick={speakText}
+              disabled={!text.trim()}
+              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              aria-label="Play text"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              Play
+            </button>
+          ) : (
+            <>
+              {isPaused ? (
+                <button
+                  type="button"
+                  onClick={resumeSpeech}
+                  className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 inline-flex items-center gap-2"
+                  aria-label="Resume"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  Resume
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={pauseSpeech}
+                  className="px-6 py-3 bg-yellow-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 inline-flex items-center gap-2"
+                  aria-label="Pause"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                  Pause
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={stopSpeech}
+                className="px-6 py-3 bg-red-600 text-white font-semibold rounded-sm focus-visible:outline-none focus-visible:border-blue-500 inline-flex items-center gap-2"
+                aria-label="Stop"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="6" y="6" width="12" height="12"></rect>
+                </svg>
+                Stop
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={saveAudio}
+            disabled={!text.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Save audio"
+          >
+            Save
+          </button>
+        </div>
+        {showSaveSuccess && (
+          <div className="mt-2 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-sm px-4 py-2">
+            <span className="text-green-700 dark:text-green-300 text-sm">Saved successfully!</span>
+          </div>
+        )}
+        {isPlaying && (
+          <div className="mt-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-sm px-4 py-2">
+            <span className="text-blue-700 dark:text-blue-300 text-sm flex items-center gap-2">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+              {isPaused ? "Paused" : "Playing..."}
+            </span>
+          </div>
+        )}
       </div>
     </main>
   );

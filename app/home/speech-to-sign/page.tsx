@@ -13,6 +13,7 @@ export default function SpeechToSignPage() {
   const [signSpeed, setSignSpeed] = useState(1);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [replayKey, setReplayKey] = useState(0);
   const recognitionRef = useRef<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isRecordingRef = useRef(false);
@@ -659,6 +660,7 @@ export default function SpeechToSignPage() {
           </label>
           <div
             id="sign-avatar"
+            key={`sign-${replayKey}-${transcript}-${signSpeed}`}
             className="w-full h-96 border-2 border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 overflow-hidden animate-fade-in"
             role="img"
             aria-label="Sign language avatar"
@@ -683,10 +685,25 @@ export default function SpeechToSignPage() {
             <span id="sign-speed-value" className="text-sm text-gray-700 dark:text-gray-300 w-8">{signSpeed}x</span>
             <button
               type="button"
-              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+              onClick={() => setReplayKey(prev => prev + 1)}
+              disabled={!transcript.trim()}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Replay sign language"
             >
               Replay
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (transcript) {
+                  navigator.clipboard.writeText(transcript).catch(() => {});
+                }
+              }}
+              disabled={!transcript.trim()}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Copy transcript"
+            >
+              Copy
             </button>
           </div>
         </div>

@@ -25,6 +25,7 @@ export default function TranslationPage() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [autoDetectEnabled, setAutoDetectEnabled] = useState(true);
   const [showSuccessFeedback, setShowSuccessFeedback] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const detectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Voice navigation refs
@@ -177,6 +178,82 @@ export default function TranslationPage() {
       synth.speak(u);
     } catch {
       // fail silently
+    }
+  };
+
+  const saveToFavorites = () => {
+    if (!outputText.trim() || outputText.startsWith("Error:")) return;
+
+    try {
+      const favorite = {
+        id: Date.now().toString(),
+        sourceText: inputText,
+        translatedText: outputText,
+        sourceLang: sourceLang,
+        targetLang: targetLang,
+        timestamp: new Date().toLocaleString(),
+      };
+
+      const stored = localStorage.getItem("translationFavorites");
+      const favorites = stored ? JSON.parse(stored) : [];
+      
+      // Check if already favorited
+      const exists = favorites.some((f: any) => 
+        f.sourceText === inputText && f.translatedText === outputText
+      );
+      
+      if (exists) {
+        alert("This translation is already in your favorites");
+        return;
+      }
+
+      favorites.unshift(favorite);
+      const limitedFavorites = favorites.slice(0, 100);
+      localStorage.setItem("translationFavorites", JSON.stringify(limitedFavorites));
+      
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error("Error saving to favorites:", error);
+      alert("Failed to save to favorites");
+    }
+  };
+
+  const exportTranslation = (format: "txt" | "json") => {
+    if (!outputText.trim() || outputText.startsWith("Error:")) {
+      alert("No translation to export");
+      return;
+    }
+
+    try {
+      if (format === "txt") {
+        const content = `Translation\n\nSource (${sourceLang}):\n${inputText}\n\nTranslation (${targetLang}):\n${outputText}\n\nDate: ${new Date().toLocaleString()}`;
+        const blob = new Blob([content], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `translation-${Date.now()}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else if (format === "json") {
+        const data = {
+          sourceText: inputText,
+          translatedText: outputText,
+          sourceLang: sourceLang,
+          targetLang: targetLang,
+          timestamp: new Date().toISOString(),
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `translation-${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error("Error exporting translation:", error);
+      alert("Failed to export translation");
     }
   };
 

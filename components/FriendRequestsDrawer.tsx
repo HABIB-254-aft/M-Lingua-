@@ -363,6 +363,9 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
 
   if (!isOpen) return null;
 
+  // Check if we're on the friend-requests page (full page mode)
+  const isFullPage = typeof window !== "undefined" && window.location.pathname === "/home/friend-requests";
+
   return (
     <>
       {/* Notification */}
@@ -376,15 +379,17 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         </div>
       )}
 
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      {/* Overlay - hidden on full page */}
+      {!isFullPage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto transform transition-transform duration-300 ease-out">
+      {/* Drawer - full width on friend-requests page, relative positioning for scroll */}
+      <div className={`${isFullPage ? 'relative' : 'fixed'} ${isFullPage ? '' : 'right-0'} ${isFullPage ? '' : 'left-0 right-0'} ${isFullPage ? '' : 'top-0'} ${isFullPage ? 'min-h-screen' : 'h-full'} ${isFullPage ? 'w-full' : 'w-full max-w-md'} bg-white dark:bg-gray-900 ${isFullPage ? '' : 'shadow-xl'} ${isFullPage ? 'z-0' : 'z-50'} ${isFullPage ? '' : 'overflow-y-auto'} ${isFullPage ? '' : 'transform transition-transform duration-300 ease-out'}`}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">

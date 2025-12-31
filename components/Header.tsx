@@ -4,8 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "../contexts/ThemeContext";
-import ProfileDrawer from "./ProfileDrawer";
-import FriendRequestsDrawer from "./FriendRequestsDrawer";
 import InstallButton from "./InstallButton";
 import { onAuthStateChange, getCurrentUser } from "@/lib/firebase/auth";
 import { getUserProfile, setUserPresence, getFriendRequests } from "@/lib/firebase/firestore";
@@ -14,9 +12,6 @@ import { offlineDetector } from "@/lib/offline-detector";
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
-  const [showFriendRequests, setShowFriendRequests] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [friendRequestsCount, setFriendRequestsCount] = useState(0);
@@ -285,7 +280,7 @@ export default function Header() {
     try {
       const authData = localStorage.getItem("mlingua_auth");
       if (authData) {
-        setShowProfile(true);
+        router.push("/home/profile");
       } else {
         router.push("/login");
       }
@@ -371,7 +366,7 @@ export default function Header() {
                   type="button"
                   onClick={() => {
                     if (isAuthenticated) {
-                      setShowFriendRequests(true);
+                      router.push("/home/friend-requests");
                     } else {
                       router.push("/login");
                     }
@@ -404,8 +399,6 @@ export default function Header() {
           </div>
         </div>
       </header>
-      <ProfileDrawer isOpen={showProfile} onClose={() => setShowProfile(false)} />
-      <FriendRequestsDrawer isOpen={showFriendRequests} onClose={() => setShowFriendRequests(false)} />
     </>
   );
 }

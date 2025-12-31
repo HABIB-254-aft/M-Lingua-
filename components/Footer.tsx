@@ -2,23 +2,21 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import SettingsDrawer from "./SettingsDrawer";
-import FriendsDrawer from "./FriendsDrawer";
 import FooterItem from "./FooterItem";
-import { Users, MessageSquare, Settings } from "lucide-react";
+import { Users, MessageSquare, Settings, Home as HomeIcon, Grid3x3 } from "lucide-react";
 import { getCurrentUser } from "@/lib/firebase/auth";
 
 export default function Footer() {
   const router = useRouter();
   const pathname = usePathname();
-  const [showSettings, setShowSettings] = useState(false);
-  const [showFriends, setShowFriends] = useState(false);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   
-  // Determine active state based on pathname or open drawers
+  // Determine active state based on pathname
+  const isHomeActive = pathname === '/home' || pathname === '/home/';
+  const isFeaturesActive = pathname?.includes('/features');
   const isMessagesActive = pathname?.includes('/messages') || pathname?.includes('/chat') || pathname?.includes('/test-chat-layout');
-  const isFriendsActive = showFriends;
-  const isSettingsActive = showSettings;
+  const isFriendsActive = pathname?.includes('/friends');
+  const isSettingsActive = pathname?.includes('/settings');
 
   // Load unread messages count (placeholder - can be connected to Firebase/context later)
   useEffect(() => {
@@ -65,7 +63,7 @@ export default function Footer() {
     try {
       const authData = localStorage.getItem("mlingua_auth");
       if (authData) {
-        setShowFriends(true);
+        router.push("/home/friends");
       } else {
         router.push("/login");
       }
@@ -74,9 +72,6 @@ export default function Footer() {
     }
   };
 
-  const handleSettingsClick = () => {
-    setShowSettings(true);
-  };
 
   return (
     <>
@@ -86,12 +81,27 @@ export default function Footer() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-around h-16">
+            {/* Home Icon */}
+            <FooterItem
+              icon={HomeIcon}
+              label="Home"
+              href="/home"
+              isActive={isHomeActive}
+            />
+
+            {/* Features Icon */}
+            <FooterItem
+              icon={Grid3x3}
+              label="Features"
+              href="/home/features"
+              isActive={isFeaturesActive}
+            />
+
             {/* Friends List Icon */}
             <FooterItem
               icon={Users}
               label="Friends"
               href="/home/friends"
-              onClick={handleFriendsClick}
               isActive={isFriendsActive}
             />
 
@@ -112,14 +122,11 @@ export default function Footer() {
               icon={Settings}
               label="Settings"
               href="/home/settings"
-              onClick={handleSettingsClick}
               isActive={isSettingsActive}
             />
           </div>
         </div>
       </footer>
-      <SettingsDrawer isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      <FriendsDrawer isOpen={showFriends} onClose={() => setShowFriends(false)} />
     </>
   );
 }

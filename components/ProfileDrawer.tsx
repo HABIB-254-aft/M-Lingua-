@@ -612,17 +612,22 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
     return null; // Will redirect to login
   }
 
+  // Check if we're on the profile page (full page mode)
+  const isFullPage = typeof window !== "undefined" && window.location.pathname === "/home/profile";
+
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-50"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      {/* Backdrop - hidden on full page */}
+      {!isFullPage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
       
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto">
+      {/* Drawer - full width on profile page, relative positioning for scroll */}
+      <div className={`${isFullPage ? 'relative' : 'fixed'} ${isFullPage ? '' : 'right-0'} ${isFullPage ? '' : 'left-0 right-0'} ${isFullPage ? '' : 'top-0'} ${isFullPage ? 'min-h-screen' : 'h-full'} ${isFullPage ? 'w-full' : 'w-full max-w-md'} bg-white dark:bg-gray-900 ${isFullPage ? '' : 'shadow-xl'} ${isFullPage ? 'z-0' : 'z-50'} ${isFullPage ? '' : 'overflow-y-auto'}`}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">

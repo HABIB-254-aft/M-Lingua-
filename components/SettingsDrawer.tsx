@@ -248,17 +248,22 @@ export default function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps)
 
   if (!isOpen) return null;
 
+  // Check if we're on the settings page (full page mode)
+  const isFullPage = typeof window !== "undefined" && window.location.pathname === "/home/settings";
+
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-50"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+      {/* Backdrop - hidden on full page */}
+      {!isFullPage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-50"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
       
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto">
+      {/* Drawer - full width on settings page */}
+      <div className={`fixed ${isFullPage ? 'left-0 right-0' : 'right-0'} top-0 h-full ${isFullPage ? 'w-full' : 'w-full max-w-md'} bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto`}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">

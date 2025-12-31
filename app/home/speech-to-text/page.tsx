@@ -11,6 +11,8 @@ export default function SpeechToTextPage() {
   const [showStoppedMessage, setShowStoppedMessage] = useState(false);
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [fileError, setFileError] = useState("");
+  const [recognitionLang, setRecognitionLang] = useState("en-US");
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const recognitionRef = useRef<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isRecordingRef = useRef(false);
@@ -103,7 +105,7 @@ export default function SpeechToTextPage() {
       setTranscript(""); // Clear transcript for new recording
 
       const recognition = new SpeechRecognition();
-      recognition.lang = "en-US";
+      recognition.lang = recognitionLang;
       recognition.continuous = true;
       recognition.interimResults = true;
 
@@ -308,7 +310,7 @@ export default function SpeechToTextPage() {
       }
 
       const recognition = new SpeechRecognition();
-      recognition.lang = "en-US";
+      recognition.lang = recognitionLang;
       recognition.continuous = true;
       recognition.interimResults = true;
 
@@ -406,6 +408,83 @@ export default function SpeechToTextPage() {
     if (typeof window !== "undefined") {
       sessionStorage.setItem("translationInput", transcript);
       router.push("/home/translation");
+    }
+  };
+
+  const saveTranscript = () => {
+    if (!transcript.trim()) return;
+    
+    try {
+      const historyItem = {
+        id: Date.now().toString(),
+        transcript: transcript,
+        language: recognitionLang,
+        timestamp: new Date().toLocaleString(),
+        source: fileName !== "No file chosen" ? fileName : "Live Recording",
+      };
+
+      const stored = localStorage.getItem("speechToTextHistory");
+      const history = stored ? JSON.parse(stored) : [];
+      history.unshift(historyItem);
+      
+      // Keep only last 100 items
+      const limitedHistory = history.slice(0, 100);
+      localStorage.setItem("speechToTextHistory", JSON.stringify(limitedHistory));
+      
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error("Error saving transcript:", error);
+      alert("Failed to save transcript");
+    }
+  };
+
+  const exportTranscript = (format: "txt" | "pdf") => {
+    if (!transcript.trim()) {
+      alert("No transcript to export");
+      return;
+    }
+
+    try {
+      if (format === "txt") {
+        const blob = new Blob([transcript], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `transcript-${Date.now()}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else if (format === "pdf") {
+        // For PDF, we'll use a simple approach with window.print or a library
+        // For now, create a printable HTML document
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Transcript</title>
+                <style>
+                  body { font-family: Arial, sans-serif; padding: 20px; }
+                  h1 { color: #333; }
+                  pre { white-space: pre-wrap; word-wrap: break-word; }
+                </style>
+              </head>
+              <body>
+                <h1>Speech to Text Transcript</h1>
+                <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+                <p><strong>Language:</strong> ${recognitionLang}</p>
+                <hr>
+                <pre>${transcript}</pre>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+        }
+      }
+    } catch (error) {
+      console.error("Error exporting transcript:", error);
+      alert("Failed to export transcript");
     }
   };
 
@@ -757,11 +836,42 @@ export default function SpeechToTextPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 mt-4">
+        {/* Language Selection */}
+        <div className="mb-4">
+          <label htmlFor="recognition-lang" className="block text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
+            Recognition Language:
+          </label>
+          <select
+            id="recognition-lang"
+            value={recognitionLang}
+            onChange={(e) => setRecognitionLang(e.target.value)}
+            disabled={isRecording}
+            className="px-4 py-2 border-2 border-gray-300 dark:border-gray-700 rounded-sm text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-2 focus:outline-blue-600 focus:outline-offset-2 focus:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Recognition language"
+          >
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="es-ES">Spanish (Spain)</option>
+            <option value="es-MX">Spanish (Mexico)</option>
+            <option value="fr-FR">French</option>
+            <option value="de-DE">German</option>
+            <option value="it-IT">Italian</option>
+            <option value="pt-BR">Portuguese (Brazil)</option>
+            <option value="ru-RU">Russian</option>
+            <option value="zh-CN">Chinese (Simplified)</option>
+            <option value="ja-JP">Japanese</option>
+            <option value="ko-KR">Korean</option>
+            <option value="ar-SA">Arabic</option>
+            <option value="hi-IN">Hindi</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-3 mt-4 flex-wrap">
           <button
             type="button"
             onClick={copyTranscript}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+            disabled={!transcript.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Copy transcript"
           >
             Copy
@@ -769,10 +879,38 @@ export default function SpeechToTextPage() {
           <button
             type="button"
             onClick={clearTranscript}
-            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500"
+            disabled={!transcript.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Clear transcript"
           >
             Clear
+          </button>
+          <button
+            type="button"
+            onClick={saveTranscript}
+            disabled={!transcript.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Save transcript"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => exportTranscript("txt")}
+            disabled={!transcript.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Export as TXT"
+          >
+            Export TXT
+          </button>
+          <button
+            type="button"
+            onClick={() => exportTranscript("pdf")}
+            disabled={!transcript.trim()}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-sm text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 focus-visible:outline-none focus-visible:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Export as PDF"
+          >
+            Export PDF
           </button>
           <button
             type="button"
@@ -784,6 +922,11 @@ export default function SpeechToTextPage() {
             Translate
           </button>
         </div>
+        {showSaveSuccess && (
+          <div className="mt-2 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-sm px-4 py-2">
+            <span className="text-green-700 dark:text-green-300 text-sm">Transcript saved successfully!</span>
+          </div>
+        )}
       </div>
     </main>
   );
