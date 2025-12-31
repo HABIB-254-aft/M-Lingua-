@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "../contexts/ThemeContext";
@@ -21,6 +21,7 @@ export default function Header() {
   const [showFriends, setShowFriends] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const currentUserIdRef = useRef<string | null>(null);
   const { darkMode, toggleDarkMode } = useTheme();
 
   // Check authentication status and load user data
@@ -81,6 +82,7 @@ export default function Header() {
       if (firebaseUser) {
         const profile = await getUserProfile(firebaseUser.uid);
         if (profile) {
+          currentUserIdRef.current = firebaseUser.uid;
           setIsAuthenticated(true);
           setUser({
             id: firebaseUser.uid,
@@ -90,18 +92,44 @@ export default function Header() {
             photoURL: profile.photoURL || firebaseUser.photoURL,
           });
           
-          // Set user as online when authenticated
-          try {
-            const { setUserPresence } = await import("@/lib/firebase/firestore");
-            await setUserPresence(firebaseUser.uid, 'Online');
-          } catch (error) {
-            console.warn('Could not set user presence:', error);
-          }
+          // Set user as online when authenticated (with retry on failure)
+          const setPresence = async () => {
+            try {
+              const { setUserPresence } = await import("@/lib/firebase/firestore");
+              const result = await setUserPresence(firebaseUser.uid, 'Online');
+              if (result.success) {
+                console.log('User presence set to Online');
+              } else {
+                console.warn('Failed to set user presence:', result.error);
+                // Retry after a short delay
+                setTimeout(setPresence, 1000);
+              }
+            } catch (error) {
+              console.warn('Could not set user presence:', error);
+              // Retry after a short delay
+              setTimeout(setPresence, 1000);
+            }
+          };
+          setPresence();
         }
       } else {
+        // Get the user ID before clearing state
+        const previousUserId = currentUserIdRef.current;
+        currentUserIdRef.current = null;
+        
         setIsAuthenticated(false);
         setUser(null);
         localStorage.removeItem("mlingua_auth");
+        
+        // Set user as offline when logged out
+        if (previousUserId) {
+          try {
+            const { setUserPresence } = await import("@/lib/firebase/firestore");
+            await setUserPresence(previousUserId, 'Offline');
+          } catch (error) {
+            console.warn('Could not set user presence to Offline:', error);
+          }
+        }
       }
     });
     
@@ -110,15 +138,33 @@ export default function Header() {
     // Also check on focus (in case user logged in/out in same tab)
     window.addEventListener("focus", checkAuth);
     
-    // Listen to online/offline status and update presence
+    // Listen to online/offline status and update ONLY this user's presence
+    // This does not affect other users - each user has independent presence
     const offlineUnsubscribe = offlineDetector.subscribe(async (status) => {
       const firebaseUser = getCurrentUser();
       if (firebaseUser && status.isOnline !== undefined) {
         try {
-          await setUserPresence(firebaseUser.uid, status.isOnline ? 'Online' : 'Offline');
+          const newStatus = status.isOnline ? 'Online' : 'Offline';
+          console.log(`[${firebaseUser.uid}] Connection status changed: ${newStatus}. Updating ONLY this user's presence...`);
+          const result = await setUserPresence(firebaseUser.uid, newStatus);
+          if (result.success) {
+            console.log(`[${firebaseUser.uid}] Presence updated to ${newStatus} (this only affects this user's status)`);
+          } else {
+            console.warn('Failed to update presence:', result.error);
+          }
         } catch (error) {
           console.warn('Could not update user presence:', error);
         }
+      }
+    });
+    
+    // Also check connection status immediately on mount
+    offlineDetector.checkConnection().then((isOnline) => {
+      const firebaseUser = getCurrentUser();
+      if (firebaseUser) {
+        setUserPresence(firebaseUser.uid, isOnline ? 'Online' : 'Offline').catch((error) => {
+          console.warn('Could not set initial presence:', error);
+        });
       }
     });
 

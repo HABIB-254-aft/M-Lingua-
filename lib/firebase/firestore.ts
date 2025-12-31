@@ -803,12 +803,15 @@ export interface UserPresence {
 }
 
 // Set user presence status
+// This only updates the current user's own presence document
+// Other users' presence is not affected - they have their own independent presence documents
 export async function setUserPresence(userId: string, status: 'Online' | 'Offline') {
   try {
     if (!db) {
       return { success: false, error: 'Firestore not initialized' };
     }
     
+    console.log(`Setting presence for user ${userId} to ${status}`);
     const presenceRef = doc(db, 'presence', userId);
     await setDoc(presenceRef, {
       userId,
@@ -817,6 +820,7 @@ export async function setUserPresence(userId: string, status: 'Online' | 'Offlin
       updatedAt: serverTimestamp(),
     }, { merge: true });
     
+    console.log(`Successfully set presence for user ${userId} to ${status}`);
     return { success: true, error: null };
   } catch (error: any) {
     console.error('Error setting user presence:', error);

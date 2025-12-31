@@ -757,11 +757,37 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             friendPresenceUnsubscribersRef.current.clear();
             
             // Set up presence listeners for each friend to update their status in real-time
-            updatedFriends.forEach((friend: any) => {
+            updatedFriends.forEach(async (friend: any) => {
+              // First, try to get the current presence status immediately
+              try {
+                const { getUserPresence } = await import("@/lib/firebase/firestore");
+                const { presence: currentPresence } = await getUserPresence(friend.id);
+                if (currentPresence) {
+                  console.log('Friend initial presence:', friend.id, currentPresence.status);
+                  // Update friend's status immediately
+                  setFriends((prevFriends) => 
+                    prevFriends.map((f: any) => 
+                      f.id === friend.id 
+                        ? { ...f, status: currentPresence.status }
+                        : f
+                    )
+                  );
+                } else {
+                  // If no presence document exists, assume offline for now
+                  console.log('No presence document found for friend:', friend.id);
+                }
+              } catch (error) {
+                console.warn('Could not get initial friend presence:', error);
+              }
+              
+              // Then set up real-time listener for future updates
+              // This listens to the FRIEND's presence document, not the current user's
+              // When the friend goes online/offline, only their status in this user's friends list updates
+              // The current user's own presence is not affected
               const unsub = subscribeToUserPresence(friend.id, async (presence) => {
                 if (presence) {
-                  console.log('Friend presence updated:', friend.id, presence.status);
-                  // Update friend's status in the friends list
+                  console.log(`Friend ${friend.id} presence updated: ${presence.status} (this only affects their status in the friends list)`);
+                  // Update friend's status in the friends list (does not affect current user's presence)
                   setFriends((prevFriends) => 
                     prevFriends.map((f: any) => 
                       f.id === friend.id 
@@ -782,6 +808,16 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                   } catch (error) {
                     console.warn('Could not update friend status in Firestore:', error);
                   }
+                } else {
+                  // If presence is null, set status to Offline
+                  console.log('Friend presence is null, setting to Offline:', friend.id);
+                  setFriends((prevFriends) => 
+                    prevFriends.map((f: any) => 
+                      f.id === friend.id 
+                        ? { ...f, status: 'Offline' }
+                        : f
+                    )
+                  );
                 }
               });
               
