@@ -705,12 +705,21 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       if (firebaseUser && firebaseUser.uid) {
         try {
           unsubscribeFriends = subscribeToFriends(firebaseUser.uid, (updatedFriends) => {
-            console.log('Friends list updated via real-time listener:', updatedFriends.length);
+            console.log('Friends list updated via real-time listener:', updatedFriends.length, updatedFriends);
             setFriends(updatedFriends);
+            // Also update localStorage for backward compatibility
+            try {
+              localStorage.setItem("mlingua_friends", JSON.stringify(updatedFriends));
+            } catch (e) {
+              console.warn('Failed to update localStorage:', e);
+            }
           });
+          console.log('Friends real-time listener set up successfully for user:', firebaseUser.uid);
         } catch (error) {
           console.error('Error setting up friends listener:', error);
         }
+      } else {
+        console.warn('Cannot set up friends listener: Firebase user not available');
       }
     };
     setupFriendsListener();
@@ -1382,8 +1391,24 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                         className="flex items-center justify-between p-3 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:shadow-md transition-shadow"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                            {(user.displayName || user.email || "U").charAt(0).toUpperCase()}
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm overflow-hidden flex-shrink-0">
+                            {user.photoURL ? (
+                              <img
+                                src={user.photoURL}
+                                alt={user.displayName || user.email || "User"}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  // Fallback to initial if image fails to load
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  if (target.parentElement) {
+                                    target.parentElement.innerHTML = (user.displayName || user.email || "U").charAt(0).toUpperCase();
+                                  }
+                                }}
+                              />
+                            ) : (
+                              (user.displayName || user.email || "U").charAt(0).toUpperCase()
+                            )}
                           </div>
                           <div>
                             <div className="font-semibold text-gray-900 dark:text-gray-100">
@@ -1426,6 +1451,18 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                   </span>
                 )}
               </h3>
+              {/* Refresh button */}
+              <button
+                type="button"
+                onClick={async () => {
+                  await loadFriendsData();
+                }}
+                className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                title="Refresh friends list"
+                aria-label="Refresh"
+              >
+                🔄
+              </button>
             </div>
             
             {/* Filter and Sort Controls */}
@@ -1505,8 +1542,23 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
                       className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
                     >
                       <div className="relative flex-shrink-0">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                          {friend.avatar || (friend.name || "U").charAt(0).toUpperCase()}
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm overflow-hidden">
+                          {friend.photoURL ? (
+                            <img
+                              src={friend.photoURL}
+                              alt={friend.name || "Friend"}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                if (target.parentElement) {
+                                  target.parentElement.innerHTML = (friend.avatar || friend.name || "U").charAt(0).toUpperCase();
+                                }
+                              }}
+                            />
+                          ) : (
+                            friend.avatar || (friend.name || "U").charAt(0).toUpperCase()
+                          )}
                         </div>
                         <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-gray-800 ${
                           friend.status === 'Online' ? 'bg-green-500' : 'bg-gray-400'
