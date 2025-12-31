@@ -89,7 +89,7 @@ export default function Home() {
           });
 
           // Load friend requests count
-          const requests = await getFriendRequests(firebaseUser.uid);
+          const { requests } = await getFriendRequests(firebaseUser.uid);
           setFriendRequestsCount(requests.length);
 
           return () => {
