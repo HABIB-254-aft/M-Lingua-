@@ -12,8 +12,8 @@ class OfflineDetector {
   private wasOffline: boolean = false;
   private checkInterval: NodeJS.Timeout | null = null;
   private lastCheckTime: number = 0;
-  private readonly CHECK_INTERVAL = 30000; // Check every 30 seconds
-  private readonly CHECK_TIMEOUT = 5000; // 5 second timeout for connection check
+  private readonly CHECK_INTERVAL = 10000; // Check every 10 seconds (more frequent)
+  private readonly CHECK_TIMEOUT = 3000; // 3 second timeout for connection check
 
   constructor() {
     // Only run in browser context (not in service worker)
@@ -44,7 +44,12 @@ class OfflineDetector {
       const now = Date.now();
       // Only check if enough time has passed since last check
       if (now - this.lastCheckTime >= this.CHECK_INTERVAL) {
-        this.checkConnection();
+        console.log('Periodic connection check running...');
+        this.checkConnection().then((isOnline) => {
+          console.log('Periodic check result:', isOnline ? 'Online' : 'Offline');
+        }).catch((error) => {
+          console.warn('Periodic check error:', error);
+        });
       }
     }, this.CHECK_INTERVAL);
   }
@@ -75,11 +80,22 @@ class OfflineDetector {
   }
 
   private handleOffline() {
-    // Browser says we're offline, but verify
+    // Browser says we're offline - immediately notify listeners
+    // This is important because when offline, we can't do network checks
+    const wasOnline = this.isOnline;
     this.isOnline = false;
-    this.notifyListeners({ isOnline: false, wasOffline: false });
-    // Also do a connection check to confirm
-    this.checkConnection();
+    
+    if (wasOnline) {
+      // Only notify if status actually changed
+      console.log('Browser detected offline status - notifying listeners');
+      this.notifyListeners({ isOnline: false, wasOffline: false });
+    }
+    
+    // Also do a connection check to confirm (but this will likely fail when offline)
+    // The check is async, so listeners are already notified
+    this.checkConnection().catch(() => {
+      // Expected to fail when offline
+    });
   }
 
   private notifyListeners(status: OfflineStatus) {
@@ -134,7 +150,9 @@ class OfflineDetector {
     
     // First check navigator.onLine (fast check)
     if (!navigator.onLine) {
-      if (this.isOnline) {
+      const wasOnline = this.isOnline;
+      if (wasOnline) {
+        console.log('navigator.onLine is false - user is offline');
         this.isOnline = false;
         this.notifyListeners({ isOnline: false, wasOffline: false });
       }

@@ -22,6 +22,7 @@ export default function Header() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
   const currentUserIdRef = useRef<string | null>(null);
+  const pendingPresenceUpdateRef = useRef<'Online' | 'Offline' | null>(null);
   const { darkMode, toggleDarkMode } = useTheme();
 
   // Check authentication status and load user data
@@ -143,17 +144,48 @@ export default function Header() {
     const offlineUnsubscribe = offlineDetector.subscribe(async (status) => {
       const firebaseUser = getCurrentUser();
       if (firebaseUser && status.isOnline !== undefined) {
-        try {
-          const newStatus = status.isOnline ? 'Online' : 'Offline';
-          console.log(`[${firebaseUser.uid}] Connection status changed: ${newStatus}. Updating ONLY this user's presence...`);
-          const result = await setUserPresence(firebaseUser.uid, newStatus);
-          if (result.success) {
-            console.log(`[${firebaseUser.uid}] Presence updated to ${newStatus} (this only affects this user's status)`);
-          } else {
-            console.warn('Failed to update presence:', result.error);
+        const newStatus = status.isOnline ? 'Online' : 'Offline';
+        console.log(`[${firebaseUser.uid}] Connection status changed: ${newStatus}. Updating ONLY this user's presence...`);
+        
+        // Store the desired status for retry if update fails
+        pendingPresenceUpdateRef.current = newStatus;
+        
+        // Try to update presence
+        const updatePresence = async () => {
+          try {
+            const result = await setUserPresence(firebaseUser.uid, newStatus);
+            if (result.success) {
+              console.log(`[${firebaseUser.uid}] Presence updated to ${newStatus} (this only affects this user's status)`);
+              pendingPresenceUpdateRef.current = null; // Clear pending update
+            } else {
+              console.warn('Failed to update presence:', result.error);
+              // If we're offline and the update failed, that's expected
+              // The presence will be updated when we come back online
+              if (!status.isOnline) {
+                console.log('User is offline - presence update will be retried when connection is restored');
+              }
+            }
+          } catch (error: any) {
+            console.warn('Could not update user presence:', error);
+            // If we're offline, this is expected - we'll retry when back online
+            if (!status.isOnline) {
+              console.log('User is offline - presence update will be retried when connection is restored');
+            }
           }
-        } catch (error) {
-          console.warn('Could not update user presence:', error);
+        };
+        
+        // If we're online, try to update immediately
+        // If we're offline, the update will fail but we'll retry when back online
+        await updatePresence();
+        
+        // If we just came back online and there's a pending update, retry it
+        if (status.isOnline && pendingPresenceUpdateRef.current) {
+          console.log('Connection restored - retrying pending presence update...');
+          setTimeout(async () => {
+            if (pendingPresenceUpdateRef.current) {
+              await updatePresence();
+            }
+          }, 1000); // Wait 1 second for connection to stabilize
         }
       }
     });
