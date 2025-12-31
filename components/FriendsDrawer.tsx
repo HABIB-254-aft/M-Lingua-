@@ -17,6 +17,8 @@ import {
   cancelFriendRequest,
   searchUsers,
   subscribeToFriends,
+  subscribeToUserPresence,
+  setUserPresence,
 } from "@/lib/firebase/firestore";
 
 interface FriendsDrawerProps {
@@ -29,6 +31,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
   const [friends, setFriends] = useState<any[]>([]);
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [sentRequests, setSentRequests] = useState<any[]>([]);
+  const friendPresenceUnsubscribersRef = useRef<Map<string, () => void>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -742,6 +745,49 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
           
           unsubscribeFriends = subscribeToFriends(userId, (updatedFriends) => {
             console.log('Friends list updated via real-time listener:', updatedFriends.length, updatedFriends);
+            
+            // Clean up old presence listeners
+            friendPresenceUnsubscribersRef.current.forEach((unsub) => {
+              try {
+                unsub();
+              } catch (e) {
+                console.warn('Error unsubscribing from friend presence:', e);
+              }
+            });
+            friendPresenceUnsubscribersRef.current.clear();
+            
+            // Set up presence listeners for each friend to update their status in real-time
+            updatedFriends.forEach((friend: any) => {
+              const unsub = subscribeToUserPresence(friend.id, async (presence) => {
+                if (presence) {
+                  console.log('Friend presence updated:', friend.id, presence.status);
+                  // Update friend's status in the friends list
+                  setFriends((prevFriends) => 
+                    prevFriends.map((f: any) => 
+                      f.id === friend.id 
+                        ? { ...f, status: presence.status }
+                        : f
+                    )
+                  );
+                  
+                  // Also update the friend document in Firestore to persist the status
+                  try {
+                    const firebaseUser = getCurrentUser();
+                    if (firebaseUser) {
+                      await addFriend(firebaseUser.uid, {
+                        ...friend,
+                        status: presence.status,
+                      });
+                    }
+                  } catch (error) {
+                    console.warn('Could not update friend status in Firestore:', error);
+                  }
+                }
+              });
+              
+              friendPresenceUnsubscribersRef.current.set(friend.id, unsub);
+            });
+            
             setFriends(updatedFriends);
             // Also update localStorage for backward compatibility
             try {
@@ -751,6 +797,14 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
             }
           });
           console.log('Friends real-time listener set up successfully for user:', userId);
+          
+          // Set current user as online
+          try {
+            await setUserPresence(userId, 'Online');
+            console.log('Set user presence to Online');
+          } catch (error) {
+            console.warn('Could not set user presence:', error);
+          }
         } catch (error) {
           console.error('Error setting up friends listener:', error);
         }
@@ -791,8 +845,21 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       window.removeEventListener('unreadCountUpdated', handleUnreadUpdate);
       // Unsubscribe from friends listener
       if (unsubscribeFriends) {
-        unsubscribeFriends();
+        try {
+          unsubscribeFriends();
+        } catch (error) {
+          console.error('Error unsubscribing from friends listener:', error);
+        }
       }
+      // Unsubscribe from all friend presence listeners
+      friendPresenceUnsubscribersRef.current.forEach((unsub) => {
+        try {
+          unsub();
+        } catch (e) {
+          console.warn('Error unsubscribing from friend presence:', e);
+        }
+      });
+      friendPresenceUnsubscribersRef.current.clear();
       if (typeof window !== "undefined") {
         try {
           window.speechSynthesis.cancel();
@@ -1052,6 +1119,11 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
       console.log('Request from user (requester):', request.id);
       console.log('Request data:', request);
 
+      // Get requester's current presence status
+      const { getUserPresence } = await import("@/lib/firebase/firestore");
+      const { presence: requesterPresence } = await getUserPresence(request.id);
+      const requesterStatus = requesterPresence?.status || "Offline";
+      
       const newFriend = {
         id: request.id,
         name: request.name,
@@ -1059,7 +1131,7 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
         email: request.email,
         avatar: request.avatar,
         photoURL: request.photoURL,
-        status: "Offline",
+        status: requesterStatus,
       };
 
       if (firebaseUser) {

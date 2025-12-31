@@ -9,7 +9,8 @@ import ProfileDrawer from "./ProfileDrawer";
 import FriendsDrawer from "./FriendsDrawer";
 import InstallButton from "./InstallButton";
 import { onAuthStateChange, getCurrentUser } from "@/lib/firebase/auth";
-import { getUserProfile } from "@/lib/firebase/firestore";
+import { getUserProfile, setUserPresence } from "@/lib/firebase/firestore";
+import { offlineDetector } from "@/lib/offline-detector";
 
 export default function Header() {
   const router = useRouter();
@@ -88,6 +89,14 @@ export default function Header() {
             username: profile.username,
             photoURL: profile.photoURL || firebaseUser.photoURL,
           });
+          
+          // Set user as online when authenticated
+          try {
+            const { setUserPresence } = await import("@/lib/firebase/firestore");
+            await setUserPresence(firebaseUser.uid, 'Online');
+          } catch (error) {
+            console.warn('Could not set user presence:', error);
+          }
         }
       } else {
         setIsAuthenticated(false);
@@ -100,9 +109,22 @@ export default function Header() {
     window.addEventListener("storage", checkAuth);
     // Also check on focus (in case user logged in/out in same tab)
     window.addEventListener("focus", checkAuth);
+    
+    // Listen to online/offline status and update presence
+    const offlineUnsubscribe = offlineDetector.subscribe(async (status) => {
+      const firebaseUser = getCurrentUser();
+      if (firebaseUser && status.isOnline !== undefined) {
+        try {
+          await setUserPresence(firebaseUser.uid, status.isOnline ? 'Online' : 'Offline');
+        } catch (error) {
+          console.warn('Could not update user presence:', error);
+        }
+      }
+    });
 
     return () => {
       unsubscribe();
+      offlineUnsubscribe();
       window.removeEventListener("storage", checkAuth);
       window.removeEventListener("focus", checkAuth);
     };
