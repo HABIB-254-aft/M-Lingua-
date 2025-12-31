@@ -694,16 +694,18 @@ export default function FriendsDrawer({ isOpen, onClose }: FriendsDrawerProps) {
     
     loadCurrentUser();
 
-    // Load friends data
+    // Load friends data (reloads when drawer opens)
     loadFriendsData();
 
     // Set up real-time listener for friends changes (when using Firebase)
+    // This ensures friends list updates immediately when someone accepts your request
     let unsubscribeFriends: (() => void) | null = null;
-    const setupFriendsListener = async () => {
+    const setupFriendsListener = () => {
       const firebaseUser = getCurrentUser();
       if (firebaseUser && firebaseUser.uid) {
         try {
           unsubscribeFriends = subscribeToFriends(firebaseUser.uid, (updatedFriends) => {
+            console.log('Friends list updated via real-time listener:', updatedFriends.length);
             setFriends(updatedFriends);
           });
         } catch (error) {
