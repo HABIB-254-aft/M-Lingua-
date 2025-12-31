@@ -66,7 +66,7 @@ export default function ChatSidebar({
     }
 
     const loadConversations = async (conversationsList: Conversation[]) => {
-      const conversationCards: ConversationCard[] = await Promise.all(
+      const conversationCards: (ConversationCard | null)[] = await Promise.all(
         conversationsList.map(async (conv) => {
           // Get the other participant (not current user)
           const otherUserId = conv.participants.find(
