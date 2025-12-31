@@ -49,6 +49,7 @@ export default function Home() {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [recentActivity, setRecentActivity] = useState<Array<{ id: string; icon: any; title: string; time: string; color: string }>>([]);
   const currentUserIdRef = useRef<string | null>(null);
+  const initialFriendsLoadedRef = useRef<boolean>(false);
 
   // Voice navigation refs (from original homepage)
   const recognitionRef = useRef<any | null>(null);
@@ -68,41 +69,37 @@ export default function Home() {
         if (firebaseUser) {
           currentUserIdRef.current = firebaseUser.uid;
 
-          // Initial load of friends (before subscription)
-          const loadInitialFriends = async () => {
-            const { friends: initialFriends, error } = await getFriends(firebaseUser.uid);
-            if (!error && initialFriends) {
-              console.log('[Homepage] Initial friends load:', initialFriends.length);
-              setFriendsCount(initialFriends.length);
-              
-              if (initialFriends.length > 0) {
-                const friendsWithPresence = await Promise.all(
-                  initialFriends.slice(0, 3).map(async (friend) => {
-                    const { presence } = await getUserPresence(friend.id);
-                    return {
-                      id: friend.id,
-                      name: friend.name || friend.username || friend.email,
-                      status: presence?.status === 'Online' ? 'Online' : 'Offline',
-                      avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
-                    };
-                  })
-                );
-                setRecentFriends(friendsWithPresence);
-              }
-            }
-          };
+          // Initial load of friends (before subscription) - await this
+          // Retry logic in case Firebase isn't ready yet
+          let initialFriends: Friend[] = [];
+          let friendsError: string | null = null;
           
-          loadInitialFriends();
-
-          // Set up friends listener for real-time updates
-          const unsubscribeFriends = subscribeToFriends(firebaseUser.uid, async (friends: Friend[]) => {
-            console.log('[Homepage] Friends subscription callback received:', friends.length, 'friends');
-            setFriendsCount(friends.length);
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const result = await getFriends(firebaseUser.uid);
+            initialFriends = result.friends || [];
+            friendsError = result.error;
             
-            // Get presence for each friend and format for display
-            if (friends.length > 0) {
+            console.log(`[Homepage] Initial friends load attempt ${attempt + 1}:`, { count: initialFriends.length, error: friendsError });
+            
+            if (!friendsError && initialFriends.length > 0) {
+              break; // Success, exit retry loop
+            }
+            
+            if (attempt < 2) {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+          
+          console.log('[Homepage] Final initial friends load result:', { count: initialFriends.length, error: friendsError });
+          
+          if (!friendsError) {
+            console.log('[Homepage] Setting friends count to:', initialFriends.length);
+            setFriendsCount(initialFriends.length);
+            
+            if (initialFriends.length > 0) {
               const friendsWithPresence = await Promise.all(
-                friends.slice(0, 3).map(async (friend) => {
+                initialFriends.slice(0, 3).map(async (friend) => {
                   const { presence } = await getUserPresence(friend.id);
                   return {
                     id: friend.id,
@@ -112,25 +109,65 @@ export default function Home() {
                   };
                 })
               );
-              
               console.log('[Homepage] Setting recent friends:', friendsWithPresence.length);
               setRecentFriends(friendsWithPresence);
             } else {
-              console.log('[Homepage] No friends found, clearing recent friends');
               setRecentFriends([]);
             }
-          });
+            initialFriendsLoadedRef.current = true;
+          } else {
+            console.warn('[Homepage] Error loading friends after retries:', friendsError);
+            setFriendsCount(0);
+            setRecentFriends([]);
+            initialFriendsLoadedRef.current = true; // Mark as loaded even if empty/error
+          }
 
           // Load friend requests count
           const { requests } = await getFriendRequests(firebaseUser.uid);
           setFriendRequestsCount(requests.length);
 
+          // Set up friends listener for real-time updates after initial load
+          // Small delay to ensure initial load completes first
+          let unsubscribeFriends: (() => void) | null = null;
+          const subscriptionTimer = setTimeout(() => {
+            unsubscribeFriends = subscribeToFriends(firebaseUser.uid, async (friends: Friend[]) => {
+              console.log('[Homepage] Friends subscription callback received:', friends.length, 'friends', friends);
+              setFriendsCount(friends.length);
+              
+              // Get presence for each friend and format for display
+              if (friends.length > 0) {
+                const friendsWithPresence = await Promise.all(
+                  friends.slice(0, 3).map(async (friend) => {
+                    const { presence } = await getUserPresence(friend.id);
+                    return {
+                      id: friend.id,
+                      name: friend.name || friend.username || friend.email,
+                      status: presence?.status === 'Online' ? 'Online' : 'Offline',
+                      avatar: friend.photoURL ? '' : (friend.name || friend.username || friend.email || 'U').charAt(0).toUpperCase(),
+                    };
+                  })
+                );
+                
+                console.log('[Homepage] Setting recent friends from subscription:', friendsWithPresence.length);
+                setRecentFriends(friendsWithPresence);
+              } else {
+                console.log('[Homepage] No friends found in subscription, clearing recent friends');
+                setRecentFriends([]);
+              }
+            });
+          }, 100);
+
           return () => {
-            unsubscribeFriends();
+            clearTimeout(subscriptionTimer);
+            if (unsubscribeFriends) {
+              unsubscribeFriends();
+            }
           };
+        } else {
+          console.log('[Homepage] No Firebase user found');
         }
       } catch (error) {
-        console.error('Error loading user data:', error);
+        console.error('[Homepage] Error loading user data:', error);
       }
     };
 
