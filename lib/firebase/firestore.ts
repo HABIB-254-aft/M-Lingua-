@@ -283,15 +283,20 @@ export function subscribeToFriends(
 
   try {
     const friendsRef = collection(db, 'users', userId, 'friends');
+    console.log('Setting up friends listener for user:', userId, 'Collection path: users/', userId, '/friends');
     
     return onSnapshot(friendsRef, (snapshot: QuerySnapshot<DocumentData>) => {
+      console.log('Friends snapshot received:', snapshot.size, 'friends');
       const friends: Friend[] = [];
       snapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log('Friend document:', doc.id, data);
         friends.push({
           id: doc.id,
-          ...doc.data(),
+          ...data,
         } as Friend);
       });
+      console.log('Processed friends list:', friends);
       callback(friends);
     }, (error) => {
       console.error('Error listening to friends:', error);
