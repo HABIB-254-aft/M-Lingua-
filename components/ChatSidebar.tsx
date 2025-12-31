@@ -21,7 +21,7 @@ interface ConversationCard {
 
 interface ChatSidebarProps {
   selectedConversationId: string | null;
-  onSelectConversation: (conversationId: string) => void;
+  onSelectConversation: (conversationId: string | null) => void;
   onConversationCreated?: (conversationId: string) => void;
   onOpenFriendsDrawer?: () => void;
 }

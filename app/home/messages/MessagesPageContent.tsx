@@ -78,9 +78,15 @@ export default function MessagesPageContent() {
     };
   }, [handleGoHome]);
 
-  const handleSelectConversation = (conversationId: string) => {
-    // Navigate to detail page
-    router.push(`/home/messages/${conversationId}`);
+  const handleSelectConversation = (conversationId: string | null) => {
+    if (conversationId) {
+      // Navigate to detail page
+      router.push(`/home/messages/${conversationId}`);
+    } else {
+      // Clear selection - navigate back to messages list
+      setSelectedConversationId(null);
+      router.push('/home/messages');
+    }
   };
 
   const handleConversationCreated = (conversationId: string) => {
