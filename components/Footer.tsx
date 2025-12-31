@@ -1,21 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import SettingsDrawer from "./SettingsDrawer";
 import FriendsDrawer from "./FriendsDrawer";
+import FooterItem from "./FooterItem";
 import { Users, MessageSquare, Settings } from "lucide-react";
+import { getCurrentUser } from "@/lib/firebase/auth";
 
 export default function Footer() {
   const router = useRouter();
   const pathname = usePathname();
   const [showSettings, setShowSettings] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   
   // Determine active state based on pathname or open drawers
-  const isMessagesActive = pathname?.includes('/messages') || pathname?.includes('/chat');
+  const isMessagesActive = pathname?.includes('/messages') || pathname?.includes('/chat') || pathname?.includes('/test-chat-layout');
   const isFriendsActive = showFriends;
   const isSettingsActive = showSettings;
+
+  // Load unread messages count (placeholder - can be connected to Firebase/context later)
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      try {
+        const firebaseUser = getCurrentUser();
+        if (firebaseUser) {
+          // TODO: Replace with actual Firebase query for unread messages
+          // For now, using localStorage as placeholder
+          const unreadData = localStorage.getItem(`mlingua_unread_messages_${firebaseUser.uid}`);
+          if (unreadData) {
+            const unread = JSON.parse(unreadData);
+            setUnreadMessagesCount(unread.total || 0);
+          } else {
+            setUnreadMessagesCount(0);
+          }
+        }
+      } catch (error) {
+        console.warn('Error loading unread messages count:', error);
+        setUnreadMessagesCount(0);
+      }
+    };
+
+    loadUnreadCount();
+    
+    // Set up interval to check for updates (can be replaced with real-time listener)
+    const interval = setInterval(loadUnreadCount, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Don't show footer on welcome/login/signup/terms/privacy pages
   if (pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname === "/terms" || pathname === "/privacy") {
@@ -54,62 +87,34 @@ export default function Footer() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-around h-16">
             {/* Friends List Icon */}
-            <button
-              type="button"
+            <FooterItem
+              icon={Users}
+              label="Friends"
+              href="/home/friends"
               onClick={handleFriendsClick}
-              className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                isFriendsActive
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400'
-              }`}
-              aria-label="Friends"
-              title="Friends"
-            >
-              <Users className={`w-6 h-6 ${isFriendsActive ? 'text-blue-600 dark:text-blue-400' : ''}`} />
-              <span className={`text-xs font-medium ${isFriendsActive ? 'text-blue-600 dark:text-blue-400' : ''}`}>Friends</span>
-              {isFriendsActive && (
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 dark:bg-blue-400 rounded-full"></div>
-              )}
-            </button>
+              isActive={isFriendsActive}
+            />
 
-            {/* Messages/Chats Icon */}
-            <button
-              type="button"
-              data-tour="messages-footer"
-              onClick={handleMessagesClick}
-              className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                isMessagesActive
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400'
-              }`}
-              aria-label="Messages"
-              title="Messages"
-            >
-              <MessageSquare className={`w-6 h-6 ${isMessagesActive ? 'text-blue-600 dark:text-blue-400' : ''}`} />
-              <span className={`text-xs font-medium ${isMessagesActive ? 'text-blue-600 dark:text-blue-400' : ''}`}>Messages</span>
-              {isMessagesActive && (
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 dark:bg-blue-400 rounded-full"></div>
-              )}
-            </button>
+            {/* Messages/Chats Icon - with unread count badge */}
+            <div data-tour="messages-footer">
+              <FooterItem
+                icon={MessageSquare}
+                label="Messages"
+                href="/home/messages"
+                unreadCount={unreadMessagesCount}
+                onClick={handleMessagesClick}
+                isActive={isMessagesActive}
+              />
+            </div>
 
             {/* Settings Icon */}
-            <button
-              type="button"
+            <FooterItem
+              icon={Settings}
+              label="Settings"
+              href="/home/settings"
               onClick={handleSettingsClick}
-              className={`relative flex flex-col items-center justify-center gap-1 px-4 py-2 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                isSettingsActive
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400'
-              }`}
-              aria-label="Settings"
-              title="Settings"
-            >
-              <Settings className={`w-6 h-6 ${isSettingsActive ? 'text-blue-600 dark:text-blue-400' : ''}`} />
-              <span className={`text-xs font-medium ${isSettingsActive ? 'text-blue-600 dark:text-blue-400' : ''}`}>Settings</span>
-              {isSettingsActive && (
-                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-blue-600 dark:bg-blue-400 rounded-full"></div>
-              )}
-            </button>
+              isActive={isSettingsActive}
+            />
           </div>
         </div>
       </footer>

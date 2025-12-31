@@ -769,10 +769,15 @@ export interface SearchUserResult {
   photoURL?: string;
 }
 
+/**
+ * Search users by displayName or email
+ * Excludes the currently logged-in user from results
+ */
 export async function searchUsers(
   searchQuery: string,
   searchFilter: 'all' | 'name' | 'username' | 'email' = 'all',
-  limitCount: number = 50
+  limitCount: number = 50,
+  excludeUserId?: string
 ): Promise<{ users: SearchUserResult[]; error: string | null }> {
   try {
     const usersRef = collection(db, 'users');
@@ -789,6 +794,11 @@ export async function searchUsers(
     
     const users: SearchUserResult[] = [];
     allUsersSnapshot.forEach((doc) => {
+      // Exclude current user if provided
+      if (excludeUserId && doc.id === excludeUserId) {
+        return;
+      }
+
       const userData = doc.data() as UserProfile;
       const user: SearchUserResult = {
         id: doc.id,
@@ -798,7 +808,7 @@ export async function searchUsers(
         photoURL: userData.photoURL,
       };
 
-      // Apply search filter
+      // Apply search filter - search by displayName or email
       let matches = false;
       if (searchFilter === 'name') {
         matches = userData.displayName?.toLowerCase().includes(searchLower) || false;
@@ -807,11 +817,10 @@ export async function searchUsers(
       } else if (searchFilter === 'email') {
         matches = userData.email?.toLowerCase().includes(searchLower) || false;
       } else {
-        // 'all' - search in all fields
+        // 'all' - search in displayName or email (as specified in requirements)
         matches = (
           userData.displayName?.toLowerCase().includes(searchLower) ||
-          userData.email?.toLowerCase().includes(searchLower) ||
-          userData.username?.toLowerCase().includes(searchLower)
+          userData.email?.toLowerCase().includes(searchLower)
         ) || false;
       }
 

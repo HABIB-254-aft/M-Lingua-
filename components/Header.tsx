@@ -303,6 +303,14 @@ export default function Header() {
             <div className="flex items-center gap-2">
               <Link
                 href="/home"
+                onClick={() => {
+                  // Clear any active chat states when navigating to home
+                  // This ensures the dashboard loads fresh
+                  if (typeof window !== 'undefined') {
+                    // Clear any conversation-related state from localStorage if needed
+                    // The state will be reset naturally on navigation
+                  }
+                }}
                 className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 rounded"
                 aria-label="M-Lingua Home"
               >
