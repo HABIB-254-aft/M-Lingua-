@@ -152,7 +152,7 @@ export default function ChatSidebar({
   return (
     <>
       <div
-        className={`w-full md:w-1/3 lg:w-1/3 flex flex-col border-r ${
+        className={`w-full h-full flex flex-col border-r ${
           darkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"
         }`}
       >

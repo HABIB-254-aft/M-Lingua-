@@ -627,7 +627,7 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
       )}
       
       {/* Drawer - full width on profile page, relative positioning for scroll */}
-      <div className={`${isFullPage ? 'relative' : 'fixed'} ${isFullPage ? '' : 'right-0'} ${isFullPage ? '' : 'left-0 right-0'} ${isFullPage ? '' : 'top-0'} ${isFullPage ? 'min-h-screen' : 'h-full'} ${isFullPage ? 'w-full' : 'w-full max-w-md'} bg-white dark:bg-gray-900 ${isFullPage ? '' : 'shadow-xl'} ${isFullPage ? 'z-0' : 'z-50'} ${isFullPage ? '' : 'overflow-y-auto'}`}>
+      <div className={`${isFullPage ? 'relative' : 'fixed'} ${isFullPage ? '' : 'right-0'} ${isFullPage ? '' : 'left-0 right-0'} ${isFullPage ? '' : 'top-0'} ${isFullPage ? 'min-h-screen' : 'h-full'} ${isFullPage ? 'w-full' : 'w-full sm:max-w-md'} bg-white dark:bg-gray-900 ${isFullPage ? '' : 'shadow-xl'} ${isFullPage ? 'z-0' : 'z-50'} ${isFullPage ? '' : 'overflow-y-auto'}`}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">

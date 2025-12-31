@@ -96,23 +96,25 @@ export default function MessagesPageContent() {
 
   return (
     <div
-      className={`flex h-screen overflow-hidden ${
+      className={`flex flex-col md:flex-row h-screen overflow-hidden ${
         darkMode ? "bg-slate-900" : "bg-slate-50"
       }`}
     >
-      {/* Chat Sidebar - 1/3 width */}
-      <ChatSidebar
-        selectedConversationId={selectedConversationId}
-        onSelectConversation={handleSelectConversation}
-        onConversationCreated={handleConversationCreated}
-        onOpenFriendsDrawer={() => setShowFriendsDrawer(true)}
-      />
+      {/* Chat Sidebar - Full width on mobile, 1/3 on desktop */}
+      <div className={`${selectedConversationId ? 'hidden md:block' : 'block'} w-full md:w-1/3`}>
+        <ChatSidebar
+          selectedConversationId={selectedConversationId}
+          onSelectConversation={handleSelectConversation}
+          onConversationCreated={handleConversationCreated}
+          onOpenFriendsDrawer={() => setShowFriendsDrawer(true)}
+        />
+      </div>
 
       {/* Friends Drawer */}
       <FriendsDrawer isOpen={showFriendsDrawer} onClose={() => setShowFriendsDrawer(false)} />
 
-      {/* Chat View - 2/3 width */}
-      <div className="flex-1 flex items-center justify-center">
+      {/* Chat View - Full width on mobile, 2/3 on desktop */}
+      <div className="flex-1 flex items-center justify-center w-full md:w-2/3">
         {selectedConversationId ? (
           // Show loading state - navigation happens in handleSelectConversation
           <div className="text-center p-8">

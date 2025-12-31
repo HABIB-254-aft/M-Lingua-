@@ -263,7 +263,7 @@ export default function SettingsDrawer({ isOpen, onClose }: SettingsDrawerProps)
       )}
       
       {/* Drawer - full width on settings page */}
-      <div className={`fixed ${isFullPage ? 'left-0 right-0' : 'right-0'} top-0 h-full ${isFullPage ? 'w-full' : 'w-full max-w-md'} bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto`}>
+      <div className={`fixed ${isFullPage ? 'left-0 right-0' : 'right-0'} top-0 h-full ${isFullPage ? 'w-full' : 'w-full sm:max-w-md'} bg-white dark:bg-gray-900 shadow-xl z-50 overflow-y-auto`}>
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
