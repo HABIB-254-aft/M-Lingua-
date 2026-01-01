@@ -52,7 +52,7 @@ export async function compressImage(
         let currentWidth = width;
         let currentHeight = height;
         let currentCanvas = canvas;
-        let currentCtx = ctx;
+        let currentCtx: CanvasRenderingContext2D | null = ctx;
         
         // Keep compressing until we're under the size limit
         while (base64.length > maxSizeBytes) {
