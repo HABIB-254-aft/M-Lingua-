@@ -139,10 +139,35 @@ export async function createConversation(
         containsUser1: conversationData.participants.includes(userId1),
         containsUser2: conversationData.participants.includes(userId2),
         containsCurrentUser: conversationData.participants.includes(currentUser.uid),
+        currentUserUid: currentUser.uid,
+        participant0: conversationData.participants[0],
+        participant1: conversationData.participants[1],
+        matches0: currentUser.uid === conversationData.participants[0],
+        matches1: currentUser.uid === conversationData.participants[1],
       },
     });
     
-    await setDoc(conversationRef, conversationData);
+    // Ensure participants is a plain array of strings (not objects)
+    const finalData = {
+      participants: conversationData.participants.map((id: string) => String(id)),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    
+    console.log('[createConversation] Final data being sent:', {
+      currentUserUid: currentUser.uid,
+      participants: finalData.participants,
+      participantsType: typeof finalData.participants,
+      participantsIsArray: Array.isArray(finalData.participants),
+      participant0: finalData.participants[0],
+      participant1: finalData.participants[1],
+      participant0Type: typeof finalData.participants[0],
+      participant1Type: typeof finalData.participants[1],
+      matches0: currentUser.uid === finalData.participants[0],
+      matches1: currentUser.uid === finalData.participants[1],
+    });
+    
+    await setDoc(conversationRef, finalData);
     console.log('[createConversation] Conversation created successfully:', conversationId);
 
     return { conversationId, error: null };

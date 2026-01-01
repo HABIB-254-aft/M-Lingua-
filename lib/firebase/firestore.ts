@@ -853,6 +853,51 @@ export interface SearchUserResult {
 }
 
 /**
+ * Get suggested users (random sample of users who are not friends)
+ * Excludes current user, existing friends, and users with pending requests
+ */
+export async function getSuggestedUsers(
+  excludeUserId: string,
+  excludeFriendIds: string[] = [],
+  limitCount: number = 10
+): Promise<{ users: SearchUserResult[]; error: string | null }> {
+  try {
+    const usersRef = collection(db, 'users');
+    const allUsersSnapshot = await getDocs(usersRef);
+    
+    const excludeSet = new Set([excludeUserId, ...excludeFriendIds]);
+    const users: SearchUserResult[] = [];
+    
+    allUsersSnapshot.forEach((doc) => {
+      // Exclude current user and friends
+      if (excludeSet.has(doc.id)) {
+        return;
+      }
+
+      const userData = doc.data() as UserProfile;
+      const user: SearchUserResult = {
+        id: doc.id,
+        email: userData.email,
+        displayName: userData.displayName,
+        username: userData.username,
+        photoURL: userData.photoURL,
+      };
+
+      users.push(user);
+    });
+
+    // Shuffle array and take first N users
+    const shuffled = users.sort(() => Math.random() - 0.5);
+    const suggested = shuffled.slice(0, limitCount);
+
+    return { users: suggested, error: null };
+  } catch (error: any) {
+    console.error('Error getting suggested users:', error);
+    return { users: [], error: error.message };
+  }
+}
+
+/**
  * Search users by displayName or email
  * Excludes the currently logged-in user from results
  */

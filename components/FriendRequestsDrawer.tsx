@@ -11,8 +11,11 @@ import {
   declineFriendRequest,
   cancelFriendRequest,
   searchUsers,
+  getSuggestedUsers,
   subscribeToFriendRequests,
   subscribeToSentRequests,
+  subscribeToFriends,
+  getFriends,
 } from "@/lib/firebase/firestore";
 
 interface FriendRequestsDrawerProps {
@@ -25,8 +28,11 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
   const isFullPage = pathname === "/home/friend-requests";
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [sentRequests, setSentRequests] = useState<any[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [searchFilter, setSearchFilter] = useState<'all' | 'name' | 'username' | 'email'>('all');
@@ -100,6 +106,10 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
           const parsed = sentData ? JSON.parse(sentData) : [];
           setSentRequests(deduplicateRequests(parsed));
         }
+
+        // Load friends list
+        const { friends: friendsList } = await getFriends(userId);
+        setFriends(friendsList);
       } else {
         // Fallback to localStorage only
         const requestsData = localStorage.getItem(`mlingua_friend_requests_${userId}`);
@@ -160,32 +170,95 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
           console.warn('Failed to sync sent requests to localStorage:', e);
         }
       });
+
+      // Load friends list and subscribe to changes
+      const loadFriends = async () => {
+        try {
+          const { friends: friendsList } = await getFriends(userId);
+          setFriends(friendsList);
+        } catch (error) {
+          console.error("Error loading friends:", error);
+        }
+      };
+      loadFriends();
+      
+      const unsubscribeFriends = subscribeToFriends(userId, (friendsList) => {
+        setFriends(friendsList);
+      });
+
+      return () => {
+        if (unsubscribeRequests) {
+          try {
+            unsubscribeRequests();
+          } catch (e) {
+            console.warn('Error unsubscribing from friend requests:', e);
+          }
+        }
+        if (unsubscribeSent) {
+          try {
+            unsubscribeSent();
+          } catch (e) {
+            console.warn('Error unsubscribing from sent requests:', e);
+          }
+        }
+        if (unsubscribeFriends) {
+          try {
+            unsubscribeFriends();
+          } catch (e) {
+            console.warn('Error unsubscribing from friends:', e);
+          }
+        }
+      };
     } catch (error) {
       console.error("Error setting up listeners:", error);
     }
-
-    return () => {
-      if (unsubscribeRequests) {
-        try {
-          unsubscribeRequests();
-        } catch (e) {
-          console.warn('Error unsubscribing from friend requests:', e);
-        }
-      }
-      if (unsubscribeSent) {
-        try {
-          unsubscribeSent();
-        } catch (e) {
-          console.warn('Error unsubscribing from sent requests:', e);
-        }
-      }
-    };
   }, [isOpen, isFullPage, currentUser?.id, deduplicateRequests]);
 
   const showNotification = (message: string, type: 'success' | 'error') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
+
+  // Load suggested users
+  const loadSuggestedUsers = useCallback(async () => {
+    try {
+      const firebaseUser = getCurrentUser();
+      const userId = firebaseUser?.uid || currentUser?.id;
+      
+      if (!userId || !firebaseUser) {
+        setSuggestedUsers([]);
+        return;
+      }
+
+      setIsLoadingSuggestions(true);
+      
+      // Get friend IDs to exclude
+      const friendIds = friends.map((f: any) => f.id);
+      const sentRequestIds = sentRequests.map((r: any) => r.id);
+      const excludeIds = [...friendIds, ...sentRequestIds];
+      
+      const { users, error } = await getSuggestedUsers(userId, excludeIds, 8);
+      if (error) {
+        console.error('Error loading suggested users:', error);
+        setSuggestedUsers([]);
+      } else {
+        setSuggestedUsers(users);
+      }
+    } catch (error) {
+      console.error('Error loading suggested users:', error);
+      setSuggestedUsers([]);
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  }, [currentUser?.id, friends, sentRequests]);
+
+  // Load suggested users when friends and sent requests are loaded
+  useEffect(() => {
+    if ((isOpen || isFullPage) && currentUser?.id) {
+      loadSuggestedUsers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isFullPage, friends.length, sentRequests.length, currentUser?.id, loadSuggestedUsers]);
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
@@ -314,8 +387,9 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         localStorage.setItem(`mlingua_sent_requests_${userId}`, JSON.stringify(sent));
       }
 
-      // Remove from search results
+      // Remove from search results and suggested users
       setSearchResults(prev => prev.filter((u: any) => u.id !== user.id));
+      setSuggestedUsers(prev => prev.filter((u: any) => u.id !== user.id));
       setSearchQuery("");
       showNotification(`Friend request sent to ${user.displayName || user.email}`, 'success');
     } catch (error) {
@@ -570,48 +644,130 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
               )}
             </div>
 
-            {/* Search Results */}
+            {/* Suggested Users (when search is empty) */}
+            {!searchQuery.trim() && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  Suggested Users
+                </h3>
+                {isLoadingSuggestions ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    Loading suggestions...
+                  </p>
+                ) : suggestedUsers.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {suggestedUsers.map((user: any) => {
+                      // Check if user is already a friend
+                      const isFriend = friends.some((friend: any) => friend.id === user.id);
+                      
+                      return (
+                        <div
+                          key={user.id}
+                          className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0 overflow-hidden">
+                              {user.photoURL ? (
+                                <img
+                                  src={user.photoURL}
+                                  alt={user.displayName || "User"}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                (user.displayName || user.email || "U").charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {user.displayName || user.email}
+                              </div>
+                              {user.username && (
+                                <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                  @{user.username}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {isFriend ? (
+                            <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm font-medium rounded-lg flex items-center gap-2">
+                              <span>✓</span>
+                              <span>Friends</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAddFriend(user)}
+                              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors"
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                    No suggestions available. Try searching for users.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Search Results (when user is typing) */}
             {searchQuery.trim() && (
               <div className="mt-4">
                 {searchResults.length > 0 ? (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {searchResults.map((user: any) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0 overflow-hidden">
-                            {user.photoURL ? (
-                              <img
-                                src={user.photoURL}
-                                alt={user.displayName || "User"}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              (user.displayName || user.email || "U").charAt(0).toUpperCase()
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
-                              {user.displayName || user.email}
-                            </div>
-                            {user.username && (
-                              <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                @{user.username}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleAddFriend(user)}
-                          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors"
+                    {searchResults.map((user: any) => {
+                      // Check if user is already a friend
+                      const isFriend = friends.some((friend: any) => friend.id === user.id);
+                      
+                      return (
+                        <div
+                          key={user.id}
+                          className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg"
                         >
-                          Add
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0 overflow-hidden">
+                              {user.photoURL ? (
+                                <img
+                                  src={user.photoURL}
+                                  alt={user.displayName || "User"}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                (user.displayName || user.email || "U").charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                                {user.displayName || user.email}
+                              </div>
+                              {user.username && (
+                                <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                  @{user.username}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {isFriend ? (
+                            <div className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-sm font-medium rounded-lg flex items-center gap-2">
+                              <span>✓</span>
+                              <span>Friends</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAddFriend(user)}
+                              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 transition-colors"
+                            >
+                              Add
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
