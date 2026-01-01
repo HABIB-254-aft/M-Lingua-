@@ -1,0 +1,102 @@
+// Firestore Security Rules for M-Lingua
+// Copy and paste these rules into: Firebase Console > Firestore Database > Rules
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own profile
+    // Users can also read other users' profiles for searching/friend requests (but not write)
+    match /users/{userId} {
+      allow read: if request.auth != null; // Any authenticated user can read profiles for searching
+      allow write: if request.auth != null && request.auth.uid == userId; // Only own profile can be written
+    }
+    
+    // Conversations - users can read/write if they're participants
+    match /conversations/{conversationId} {
+      // Allow creation if the logged-in user is one of the participants
+      // Note: 'in' operator doesn't work with request.resource.data, so we check both indices
+      allow create: if request.auth != null && 
+                    request.resource.data.participants is list &&
+                    request.resource.data.participants.size() == 2 &&
+                    (request.auth.uid == request.resource.data.participants[0] ||
+                     request.auth.uid == request.resource.data.participants[1]);
+      
+      // Allow reading/updating only if the user is a participant
+      allow read, update: if request.auth != null && 
+                          resource.data.participants is list &&
+                          request.auth.uid in resource.data.participants;
+      
+      allow delete: if request.auth != null && 
+                    resource.data.participants is list &&
+                    request.auth.uid in resource.data.participants;
+      
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Allow read/write if user is a participant in the parent conversation
+        allow read, write: if request.auth != null && 
+          exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
+          get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants is list &&
+          request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+      }
+    }
+    
+    // Translation history - users can only access their own
+    match /users/{userId}/translationHistory/{historyId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Friends - users can only access their own friends list
+    // Also allow users to add/remove themselves from another user's friends list (bidirectional friendship)
+    match /users/{userId}/friends/{friendId} {
+      // Users can read their own friends list
+      // OR users can read their own entry in another user's friends list (for verification)
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == friendId);
+      // Users can create entries in their own friends list (when accepting requests)
+      // OR users can add themselves to another user's friends list (bidirectional)
+      allow create: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == friendId);
+      // Users can update their own friends list, or update themselves in another user's list
+      allow update: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == friendId);
+      // Users can delete from their own friends list, or remove themselves from another user's list
+      allow delete: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == friendId);
+    }
+    
+    // Friend requests - users can only access their own requests
+    match /users/{userId}/friendRequests/{requestId} {
+      // Sender can create/update requests (when sending) - document ID is sender's UID
+      // This must come first and be explicit
+      allow create: if request.auth != null && request.auth.uid == requestId;
+      allow update: if request.auth != null && 
+        (request.auth.uid == requestId || request.auth.uid == userId);
+      // Receiver can read their own incoming requests
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Receiver can delete their own incoming requests (when declining)
+      // Sender can delete (when canceling)
+      allow delete: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == requestId);
+    }
+    
+    // Sent friend requests - users can only access their own sent requests
+    match /users/{userId}/sentRequests/{requestId} {
+      // Sender can read their own sent requests
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Sender can write (create/update) their own sent requests
+      allow write: if request.auth != null && request.auth.uid == userId;
+      // Sender can delete their own sent requests, receiver can delete when declining
+      allow delete: if request.auth != null && 
+        (request.auth.uid == userId || request.auth.uid == requestId);
+    }
+    
+    // Presence - users can read any user's presence, but only update their own
+    match /presence/{userId} {
+      // Anyone authenticated can read presence (to see friend status)
+      allow read: if request.auth != null;
+      // Users can only update their own presence
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+
