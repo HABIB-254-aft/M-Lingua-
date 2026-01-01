@@ -553,10 +553,10 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
                     <button
                       key={filter}
                       type="button"
-                      onClick={() => {
-                        setSearchFilter(filter);
-                        handleSearch(searchQuery, sentRequests);
-                      }}
+                onClick={() => {
+                  setSearchFilter(filter);
+                  handleSearch(searchQuery);
+                }}
                       className={`px-2 py-1 text-xs rounded ${
                         searchFilter === filter
                           ? 'bg-blue-600 text-white'
