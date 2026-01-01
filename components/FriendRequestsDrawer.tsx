@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { getCurrentUser } from "@/lib/firebase/auth";
 import { 
   getFriendRequests, 
@@ -20,6 +21,8 @@ interface FriendRequestsDrawerProps {
 }
 
 export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequestsDrawerProps) {
+  const pathname = usePathname();
+  const isFullPage = pathname === "/home/friend-requests";
   const [friendRequests, setFriendRequests] = useState<any[]>([]);
   const [sentRequests, setSentRequests] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,6 +59,18 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
     loadCurrentUser();
   }, []);
 
+  // Helper function to deduplicate requests by ID
+  const deduplicateRequests = useCallback((requests: any[]): any[] => {
+    const seen = new Set<string>();
+    return requests.filter((request: any) => {
+      if (seen.has(request.id)) {
+        return false;
+      }
+      seen.add(request.id);
+      return true;
+    });
+  }, []);
+
   // Load friend requests and sent requests
   const loadRequestsData = useCallback(async () => {
     try {
@@ -68,45 +83,50 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         // Load from Firestore
         const { requests: firestoreRequests, error: requestsError } = await getFriendRequests(userId);
         if (!requestsError) {
-          setFriendRequests(firestoreRequests);
+          setFriendRequests(deduplicateRequests(firestoreRequests));
         } else {
           // Fallback to localStorage
           const requestsData = localStorage.getItem(`mlingua_friend_requests_${userId}`);
-          setFriendRequests(requestsData ? JSON.parse(requestsData) : []);
+          const parsed = requestsData ? JSON.parse(requestsData) : [];
+          setFriendRequests(deduplicateRequests(parsed));
         }
 
         const { requests: firestoreSentRequests, error: sentError } = await getSentRequests(userId);
         if (!sentError) {
-          setSentRequests(firestoreSentRequests);
+          setSentRequests(deduplicateRequests(firestoreSentRequests));
         } else {
           // Fallback to localStorage
           const sentData = localStorage.getItem(`mlingua_sent_requests_${userId}`);
-          setSentRequests(sentData ? JSON.parse(sentData) : []);
+          const parsed = sentData ? JSON.parse(sentData) : [];
+          setSentRequests(deduplicateRequests(parsed));
         }
       } else {
         // Fallback to localStorage only
         const requestsData = localStorage.getItem(`mlingua_friend_requests_${userId}`);
-        setFriendRequests(requestsData ? JSON.parse(requestsData) : []);
+        const parsed = requestsData ? JSON.parse(requestsData) : [];
+        setFriendRequests(deduplicateRequests(parsed));
 
         const sentData = localStorage.getItem(`mlingua_sent_requests_${userId}`);
-        setSentRequests(sentData ? JSON.parse(sentData) : []);
+        const parsedSent = sentData ? JSON.parse(sentData) : [];
+        setSentRequests(deduplicateRequests(parsedSent));
       }
     } catch (error) {
       console.error("Error loading requests data:", error);
     }
-  }, [currentUser?.id]);
+  }, [currentUser?.id, deduplicateRequests]);
 
-  // Load data when drawer opens
+  // Load data when drawer opens or in full-page mode
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen || isFullPage) {
       loadRequestsData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]); // Only depend on isOpen, not loadRequestsData to avoid infinite loops
+  }, [isOpen, isFullPage]); // Depend on both isOpen and isFullPage
 
   // Set up real-time listeners
   useEffect(() => {
-    if (!isOpen) return;
+    // Set up listeners when drawer is open OR when in full-page mode
+    if (!isOpen && !isFullPage) return;
 
     const firebaseUser = getCurrentUser();
     const userId = firebaseUser?.uid || currentUser?.id;
@@ -119,12 +139,26 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
     try {
       // Listen to friend requests
       unsubscribeRequests = subscribeToFriendRequests(userId, (requests) => {
-        setFriendRequests(requests);
+        const deduplicated = deduplicateRequests(requests);
+        setFriendRequests(deduplicated);
+        // Sync to localStorage as backup
+        try {
+          localStorage.setItem(`mlingua_friend_requests_${userId}`, JSON.stringify(deduplicated));
+        } catch (e) {
+          console.warn('Failed to sync friend requests to localStorage:', e);
+        }
       });
 
       // Listen to sent requests
       unsubscribeSent = subscribeToSentRequests(userId, (requests) => {
-        setSentRequests(requests);
+        const deduplicated = deduplicateRequests(requests);
+        setSentRequests(deduplicated);
+        // Sync to localStorage as backup
+        try {
+          localStorage.setItem(`mlingua_sent_requests_${userId}`, JSON.stringify(deduplicated));
+        } catch (e) {
+          console.warn('Failed to sync sent requests to localStorage:', e);
+        }
       });
     } catch (error) {
       console.error("Error setting up listeners:", error);
@@ -146,16 +180,14 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         }
       }
     };
-  }, [isOpen, currentUser?.id]);
+  }, [isOpen, isFullPage, currentUser?.id, deduplicateRequests]);
 
   const showNotification = (message: string, type: 'success' | 'error') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    
+  const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
       return;
@@ -173,8 +205,8 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
       let searchResults: any[] = [];
 
       if (firebaseUser) {
-        // Use Firestore to search for authenticated users
-        const { users, error } = await searchUsers(query, searchFilter, 50);
+        // Use Firestore to search for authenticated users (exclude current user)
+        const { users, error } = await searchUsers(query, searchFilter, 50, userId);
         if (error) {
           console.error('Firestore search error:', error);
         } else {
@@ -189,6 +221,7 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         const searchLower = query.toLowerCase();
 
         searchResults = allUsers.filter((user: any) => {
+          if (user.id === userId) return false; // Exclude current user
           if (searchFilter === 'name') {
             return user.displayName?.toLowerCase().includes(searchLower);
           } else if (searchFilter === 'username') {
@@ -205,19 +238,16 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
         });
       }
 
-      // Filter out current user, existing friends, and sent requests
-      const filtered = searchResults.filter((user: any) => {
-        if (user.id === userId) return false;
-        if (sentRequests.find((r: any) => r.id === user.id)) return false;
-        return true;
-      });
-
-      setSearchResults(filtered);
+      // Filter out sent requests using current state
+      // We need to get the current sentRequests state - using a ref would be better
+      // but for now, we'll use the state from the closure
+      // This will be filtered when the component re-renders with updated sentRequests
+      setSearchResults(searchResults);
     } catch (error) {
       console.error('Search error:', error);
       setSearchResults([]);
     }
-  };
+  }, [searchFilter, currentUser?.id]);
 
   const handleAddFriend = async (user: any) => {
     if (!currentUser?.id) return;
@@ -226,18 +256,46 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
       const firebaseUser = getCurrentUser();
       const userId = firebaseUser?.uid || currentUser.id;
 
+      // Get the latest user profile from Firestore to ensure we have photoURL
+      let userPhotoURL = currentUser.photoURL;
+      if (firebaseUser) {
+        try {
+          const { getUserProfile } = await import("@/lib/firebase/firestore");
+          const profile = await getUserProfile(firebaseUser.uid);
+          if (profile?.photoURL) {
+            userPhotoURL = profile.photoURL;
+            console.log('Got photoURL from Firestore profile:', userPhotoURL);
+          }
+        } catch (e) {
+          console.warn('Could not fetch user profile for photoURL:', e);
+        }
+      }
+
+      console.log('Sending friend request with photoURL:', userPhotoURL);
+
+      // Use currentUser (sender) data, not user (receiver) data
       const newRequest = {
-        id: user.id,
-        name: user.displayName || user.email,
-        username: user.username,
-        email: user.email,
-        photoURL: user.photoURL,
-        avatar: (user.displayName || user.email || "U").charAt(0).toUpperCase(),
+        id: currentUser.id,
+        name: currentUser.displayName || currentUser.email,
+        username: currentUser.username,
+        email: currentUser.email,
+        avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
+        photoURL: userPhotoURL,
       };
 
       if (firebaseUser) {
-        // Use Firestore
-        const { success, error } = await sendFriendRequest(userId, user.id, newRequest);
+        // Use Firestore - send sender's data to receiver
+        const requestData = {
+          id: currentUser.id,
+          name: currentUser.displayName || currentUser.email,
+          username: currentUser.username,
+          email: currentUser.email,
+          avatar: (currentUser.displayName || currentUser.email || "U").charAt(0).toUpperCase(),
+          photoURL: userPhotoURL,
+        };
+        
+        console.log('Sending friend request with data:', requestData);
+        const { success, error } = await sendFriendRequest(userId, user.id, requestData);
         if (!success) {
           showNotification(`Error: ${error}`, 'error');
           return;
@@ -245,7 +303,11 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
       } else {
         // Fallback to localStorage
         const sent = [...sentRequests, {
-          ...newRequest,
+          id: user.id,
+          name: user.displayName || user.email,
+          username: user.username,
+          email: user.email,
+          avatar: (user.displayName || user.email || "U").charAt(0).toUpperCase(),
           timestamp: new Date().toISOString(),
         }];
         setSentRequests(sent);
@@ -253,7 +315,7 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
       }
 
       // Remove from search results
-      setSearchResults(searchResults.filter((u: any) => u.id !== user.id));
+      setSearchResults(prev => prev.filter((u: any) => u.id !== user.id));
       setSearchQuery("");
       showNotification(`Friend request sent to ${user.displayName || user.email}`, 'success');
     } catch (error) {
@@ -313,20 +375,58 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
       const userId = firebaseUser?.uid || currentUser.id;
 
       if (firebaseUser) {
+        // Use Firestore - this already removes from both ends
+        console.log('Declining friend request:', { userId, requesterId: request.id });
         const { success, error } = await declineFriendRequest(userId, request.id);
         if (!success) {
+          console.error('Failed to decline friend request:', error);
           showNotification(`Error: ${error}`, 'error');
           return;
         }
+        console.log('Successfully declined friend request, request should be removed from Firestore');
+
+        // Clear any cached localStorage data to prevent stale data on reload
+        const cachedRequestsKey = `mlingua_friend_requests_${userId}`;
+        try {
+          const cachedRequests = localStorage.getItem(cachedRequestsKey);
+          if (cachedRequests) {
+            const parsed = JSON.parse(cachedRequests);
+            const updated = parsed.filter((r: any) => r.id !== request.id);
+            localStorage.setItem(cachedRequestsKey, JSON.stringify(updated));
+            console.log('Updated localStorage cache after decline');
+          }
+        } catch (e) {
+          console.warn('Error updating cached requests:', e);
+        }
+
+        // Update local state immediately for better UX
+        // The real-time listener will also update automatically, but this gives instant feedback
+        setFriendRequests(prev => {
+          const filtered = prev.filter((r: any) => r.id !== request.id);
+          console.log('Updated local state, remaining requests:', filtered.length);
+          return deduplicateRequests(filtered);
+        });
       } else {
-        // Fallback to localStorage
-        const updatedRequests = friendRequests.filter((r: any) => r.id !== request.id);
-        setFriendRequests(updatedRequests);
-        localStorage.setItem(`mlingua_friend_requests_${userId}`, JSON.stringify(updatedRequests));
+        // Fallback to localStorage - remove from both ends
+        // Remove from receiver's incoming requests
+        setFriendRequests(prev => {
+          const updated = prev.filter((r: any) => r.id !== request.id);
+          localStorage.setItem(`mlingua_friend_requests_${userId}`, JSON.stringify(updated));
+          return updated;
+        });
+
+        // Remove from sender's sent requests
+        const requesterSentKey = `mlingua_sent_requests_${request.id}`;
+        const requesterSentData = localStorage.getItem(requesterSentKey);
+        if (requesterSentData) {
+          const requesterSent = JSON.parse(requesterSentData);
+          const updatedRequesterSent = requesterSent.filter((r: any) => r.id !== userId);
+          localStorage.setItem(requesterSentKey, JSON.stringify(updatedRequesterSent));
+        }
       }
 
       showNotification(`Friend request from ${request.name} declined`, 'success');
-      loadRequestsData();
+      // Don't call loadRequestsData() - the real-time listener will handle the update automatically
     } catch (error) {
       console.error("Error declining friend request:", error);
       showNotification("Error declining friend request", 'error');
@@ -361,10 +461,7 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
     }
   };
 
-  if (!isOpen) return null;
-
-  // Check if we're on the friend-requests page (full page mode)
-  const isFullPage = typeof window !== "undefined" && window.location.pathname === "/home/friend-requests";
+  if (!isOpen && !isFullPage) return null;
 
   return (
     <>
@@ -424,9 +521,10 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
                 type="text"
                 value={searchQuery}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  if (e.target.value.trim()) {
-                    handleSearch(e.target.value);
+                  const value = e.target.value;
+                  setSearchQuery(value);
+                  if (value.trim()) {
+                    handleSearch(value);
                   } else {
                     setSearchResults([]);
                   }
@@ -457,7 +555,7 @@ export default function FriendRequestsDrawer({ isOpen, onClose }: FriendRequests
                       type="button"
                       onClick={() => {
                         setSearchFilter(filter);
-                        handleSearch(searchQuery);
+                        handleSearch(searchQuery, sentRequests);
                       }}
                       className={`px-2 py-1 text-xs rounded ${
                         searchFilter === filter

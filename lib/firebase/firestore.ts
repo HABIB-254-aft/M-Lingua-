@@ -79,6 +79,68 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   }
 }
 
+/**
+ * Check if a username already exists in Firestore
+ */
+export async function usernameExists(username: string, excludeUserId?: string): Promise<boolean> {
+  try {
+    const usersRef = collection(db, 'users');
+    const snapshot = await getDocs(usersRef);
+    
+    const usernameLower = username.toLowerCase();
+    let exists = false;
+    
+    snapshot.forEach((doc) => {
+      // Skip excluded user
+      if (excludeUserId && doc.id === excludeUserId) {
+        return;
+      }
+      
+      const userData = doc.data() as UserProfile;
+      if (userData.username?.toLowerCase() === usernameLower) {
+        exists = true;
+      }
+    });
+    
+    return exists;
+  } catch (error: any) {
+    console.error('Error checking username existence:', error);
+    // On error, assume username exists to be safe
+    return true;
+  }
+}
+
+/**
+ * Generate a unique username based on a base name
+ * If the base name is taken, appends numbers (name1, name2, etc.) until unique
+ */
+export async function generateUniqueUsername(baseName: string, excludeUserId?: string): Promise<string> {
+  // Clean the base name: lowercase, remove special chars except hyphens and underscores
+  let baseUsername = baseName.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '');
+  
+  // If base username is empty after cleaning, use a default
+  if (!baseUsername) {
+    baseUsername = 'user';
+  }
+  
+  // Try the base username first
+  let username = baseUsername;
+  let counter = 1;
+  
+  // Keep trying until we find a unique username (max 1000 attempts to prevent infinite loops)
+  while (await usernameExists(username, excludeUserId) && counter < 1000) {
+    username = `${baseUsername}${counter}`;
+    counter++;
+  }
+  
+  if (counter >= 1000) {
+    // Fallback: add timestamp to ensure uniqueness
+    username = `${baseUsername}${Date.now().toString().slice(-6)}`;
+  }
+  
+  return username;
+}
+
 // Conversation operations
 export interface ConversationMessage {
   id?: string;
@@ -411,9 +473,11 @@ export async function getFriendRequests(userId: string): Promise<{ requests: Fri
       const data = doc.data();
       console.log('Friend request document:', doc.id, data);
       console.log('Friend request photoURL:', data.photoURL);
+      // Ensure document ID (sender's user ID) takes precedence over any id field in data
+      const { id: _, ...dataWithoutId } = data;
       requests.push({
-        id: doc.id,
-        ...data,
+        ...dataWithoutId,
+        id: doc.id, // Document ID is the sender's user ID
       } as FriendRequest);
     });
     
@@ -435,8 +499,8 @@ export async function sendFriendRequest(userId: string, receiverId: string, requ
     console.log('Request photoURL:', request.photoURL);
     
     // Clean the request data to remove undefined values
+    // Don't store 'id' field since document ID already serves as the ID
     const cleanedRequest = removeUndefined({
-      id: request.id,
       name: request.name,
       username: request.username,
       email: request.email,
@@ -485,21 +549,37 @@ export async function sendFriendRequest(userId: string, receiverId: string, requ
     }
     
     // Add to sender's sent requests
+    // We need to store the RECEIVER's profile data, not the sender's
     console.log('Adding to sender\'s sent requests: users/', userId, '/sentRequests/', receiverId);
     const senderSentRef = collection(db, 'users', userId, 'sentRequests');
+    
+    // Fetch receiver's profile to get their data
+    const receiverProfile = await getUserProfile(receiverId);
+    if (!receiverProfile) {
+      console.warn('Could not fetch receiver profile, using minimal data');
+    }
+    
+    // Use receiver's profile data for sent requests
+    const receiverData = receiverProfile ? {
+      id: receiverId,
+      name: receiverProfile.displayName || receiverProfile.email || 'User',
+      email: receiverProfile.email,
+      ...removeUndefined({
+        username: receiverProfile.username,
+        avatar: (receiverProfile.displayName || receiverProfile.email || 'U').charAt(0).toUpperCase(),
+        photoURL: receiverProfile.photoURL,
+      }),
+    } : {
+      id: receiverId,
+      name: 'User',
+    };
+    
     try {
       await setDoc(doc(senderSentRef, receiverId), {
-        id: receiverId,
-        name: request.name,
-        ...removeUndefined({
-          username: request.username,
-          email: request.email,
-          avatar: request.avatar,
-          photoURL: request.photoURL,
-        }),
+        ...receiverData,
         sentAt: serverTimestamp(),
       });
-      console.log('Added to sender\'s sent requests successfully');
+      console.log('Added to sender\'s sent requests successfully with receiver data:', receiverData);
     } catch (sentError: any) {
       console.error('Error adding to sender\'s sent requests:', sentError);
       console.error('Error code:', sentError.code);
@@ -722,9 +802,12 @@ export function subscribeToFriendRequests(
   return onSnapshot(requestsRef, (snapshot: QuerySnapshot<DocumentData>) => {
     const requests: FriendRequest[] = [];
     snapshot.forEach((doc) => {
+      const data = doc.data();
+      // Ensure document ID (sender's user ID) takes precedence over any id field in data
+      const { id: _, ...dataWithoutId } = data;
       requests.push({
-        id: doc.id,
-        ...doc.data(),
+        ...dataWithoutId,
+        id: doc.id, // Document ID is the sender's user ID
       } as FriendRequest);
     });
     callback(requests);
@@ -817,9 +900,10 @@ export async function searchUsers(
       } else if (searchFilter === 'email') {
         matches = userData.email?.toLowerCase().includes(searchLower) || false;
       } else {
-        // 'all' - search in displayName or email (as specified in requirements)
+        // 'all' - search in displayName, username, or email
         matches = (
           userData.displayName?.toLowerCase().includes(searchLower) ||
+          userData.username?.toLowerCase().includes(searchLower) ||
           userData.email?.toLowerCase().includes(searchLower)
         ) || false;
       }

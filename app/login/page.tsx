@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
 import { signIn, signInWithGoogle } from "@/lib/firebase/auth";
-import { getUserProfile, saveUserProfile } from "@/lib/firebase/firestore";
+import { getUserProfile, saveUserProfile, generateUniqueUsername } from "@/lib/firebase/firestore";
 
 export default function Login() {
   const router = useRouter();
@@ -471,7 +471,8 @@ export default function Login() {
       if (!profile) {
         // Create profile for new user
         const firstName = user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "user";
-        const username = firstName.toLowerCase();
+        // Generate unique username
+        const username = await generateUniqueUsername(firstName, user.uid);
         
         await saveUserProfile(user.uid, {
           uid: user.uid,

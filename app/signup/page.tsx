@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
 import { signUp, signInWithGoogle } from "@/lib/firebase/auth";
-import { getUserProfile, saveUserProfile } from "@/lib/firebase/firestore";
+import { getUserProfile, saveUserProfile, generateUniqueUsername } from "@/lib/firebase/firestore";
 
 export default function Signup() {
   const spokeRef = useRef(false);
@@ -308,18 +308,9 @@ export default function Signup() {
         return;
       }
 
-      // Generate unique username
-      const firstName = fullName.split(" ")[0];
-      let username = firstName.toLowerCase();
-      let counter = 1;
-      
-      // Check if username exists (we'll improve this later with Firestore queries)
-      // For now, just use a simple approach
-      const existingProfile = await getUserProfile(user.uid);
-      if (existingProfile?.username === username) {
-        username = `${firstName.toLowerCase()}${counter}`;
-        counter++;
-      }
+      // Generate unique username based on first name
+      const firstName = fullName.split(" ")[0] || fullName;
+      const username = await generateUniqueUsername(firstName, user.uid);
 
       // Save user profile to Firestore
       await saveUserProfile(user.uid, {

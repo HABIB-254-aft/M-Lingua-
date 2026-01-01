@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { getUserProfile, saveUserProfile } from "@/lib/firebase/firestore";
+import { getUserProfile, saveUserProfile, usernameExists } from "@/lib/firebase/firestore";
 import { signOut } from "@/lib/firebase/auth";
+import { compressImage } from "@/lib/utils/imageCompression";
 
 interface ProfileDrawerProps {
   isOpen: boolean;
@@ -323,6 +324,16 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
     try {
       const firebaseUser = getCurrentUser();
       
+      // Validate username if it changed
+      if (editForm.username && editForm.username !== user?.username) {
+        // Check if username already exists (excluding current user)
+        const exists = await usernameExists(editForm.username, firebaseUser?.uid);
+        if (exists) {
+          alert("This username is already taken. Please choose a different username.");
+          return;
+        }
+      }
+      
       if (firebaseUser) {
         // Update profile in Firestore
         const { success, error } = await saveUserProfile(firebaseUser.uid, {
@@ -335,16 +346,21 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
           return;
         }
 
-        // Update local state
-        const updatedUser = {
-          ...user,
-          displayName: editForm.displayName,
-          username: editForm.username,
-        };
-        setUser(updatedUser);
+        // Reload profile from Firestore to get latest data
+        const updatedProfile = await getUserProfile(firebaseUser.uid);
+        if (updatedProfile) {
+          const updatedUser = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: updatedProfile.displayName || firebaseUser.displayName,
+            username: updatedProfile.username,
+            photoURL: updatedProfile.photoURL || firebaseUser.photoURL,
+          };
+          setUser(updatedUser);
 
-        // Also update localStorage for backward compatibility
-        localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
+          // Also update localStorage for backward compatibility
+          localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
+        }
         
         setIsEditing(false);
         alert("Profile updated successfully!");
@@ -391,12 +407,6 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image size must be less than 5MB");
-      return;
-    }
-
     // Validate file type
     if (!file.type.startsWith("image/")) {
       alert("Please select a valid image file");
@@ -404,47 +414,74 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
     }
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64Image = event.target?.result as string;
-        const firebaseUser = getCurrentUser();
-        
-        if (firebaseUser) {
-          // Update profile in Firestore
-          const { success, error } = await saveUserProfile(firebaseUser.uid, {
-            photoURL: base64Image,
-          });
-
-          if (!success) {
-            alert(`Error updating profile picture: ${error}`);
-            return;
-          }
-        }
-
-        // Update local state
-        const updatedUser = {
-          ...user,
+      // Compress and resize image to ensure it fits within Firestore's 1MB limit
+      const base64Image = await compressImage(file);
+      const firebaseUser = getCurrentUser();
+      
+      // Check if compressed image is still too large (shouldn't happen, but safety check)
+      if (base64Image.length > 1000 * 1024) { // 1MB
+        alert("Image is too large even after compression. Please choose a smaller image.");
+        return;
+      }
+      
+      if (firebaseUser) {
+        // Update profile in Firestore
+        const { success, error } = await saveUserProfile(firebaseUser.uid, {
           photoURL: base64Image,
-        };
-        setUser(updatedUser);
-        
-        // Also update localStorage for backward compatibility
-        localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
-        
-        // Update users list (for backward compatibility)
-        const users = JSON.parse(localStorage.getItem("mlingua_users") || "[]");
-        const userIndex = users.findIndex((u: any) => u.id === user.id);
-        if (userIndex !== -1) {
-          users[userIndex] = updatedUser;
-          localStorage.setItem("mlingua_users", JSON.stringify(users));
+        });
+
+        if (!success) {
+          alert(`Error updating profile picture: ${error}`);
+          return;
         }
 
-        alert("Profile picture updated successfully!");
+        // Reload profile from Firestore to ensure we have the latest data
+        const updatedProfile = await getUserProfile(firebaseUser.uid);
+        if (updatedProfile) {
+          const updatedUser = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: updatedProfile.displayName || firebaseUser.displayName,
+            username: updatedProfile.username,
+            photoURL: updatedProfile.photoURL || firebaseUser.photoURL,
+          };
+          setUser(updatedUser);
+          
+          // Also update localStorage for backward compatibility
+          localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
+          
+          // Update users list (for backward compatibility)
+          const users = JSON.parse(localStorage.getItem("mlingua_users") || "[]");
+          const userIndex = users.findIndex((u: any) => u.id === user.id);
+          if (userIndex !== -1) {
+            users[userIndex] = updatedUser;
+            localStorage.setItem("mlingua_users", JSON.stringify(users));
+          }
+
+          alert("Profile picture updated successfully!");
+          return;
+        }
+      }
+
+      // Fallback: Update local state if Firestore update failed
+      const updatedUser = {
+        ...user,
+        photoURL: base64Image,
       };
-      reader.onerror = () => {
-        alert("Error reading image file");
-      };
-      reader.readAsDataURL(file);
+      setUser(updatedUser);
+      
+      // Also update localStorage for backward compatibility
+      localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
+      
+      // Update users list (for backward compatibility)
+      const users = JSON.parse(localStorage.getItem("mlingua_users") || "[]");
+      const userIndex = users.findIndex((u: any) => u.id === user.id);
+      if (userIndex !== -1) {
+        users[userIndex] = updatedUser;
+        localStorage.setItem("mlingua_users", JSON.stringify(users));
+      }
+
+      alert("Profile picture updated successfully!");
     } catch (error) {
       console.error("Error uploading photo:", error);
       alert("Failed to upload profile picture");
@@ -469,9 +506,36 @@ export default function ProfileDrawer({ isOpen, onClose }: ProfileDrawerProps) {
           alert(`Error removing profile picture: ${error}`);
           return;
         }
+
+        // Reload profile from Firestore to ensure we have the latest data
+        const updatedProfile = await getUserProfile(firebaseUser.uid);
+        if (updatedProfile) {
+          const updatedUser = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: updatedProfile.displayName || firebaseUser.displayName,
+            username: updatedProfile.username,
+            photoURL: updatedProfile.photoURL || firebaseUser.photoURL,
+          };
+          setUser(updatedUser);
+          
+          // Also update localStorage for backward compatibility
+          localStorage.setItem("mlingua_auth", JSON.stringify(updatedUser));
+          
+          // Update users list (for backward compatibility)
+          const users = JSON.parse(localStorage.getItem("mlingua_users") || "[]");
+          const userIndex = users.findIndex((u: any) => u.id === user.id);
+          if (userIndex !== -1) {
+            users[userIndex] = updatedUser;
+            localStorage.setItem("mlingua_users", JSON.stringify(users));
+          }
+
+          alert("Profile picture removed");
+          return;
+        }
       }
 
-      // Update local state
+      // Fallback: Update local state if Firestore update failed
       const updatedUser = {
         ...user,
         photoURL: undefined,
